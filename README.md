@@ -8,6 +8,7 @@ SOPscape Council 把静态 SOP 转换成可决策、可验证、可分享的 AI 
 
 - [项目详细说明](PROJECT_OVERVIEW.zh-CN.md)：项目解决什么问题、如何工作、3D/A2MCP/MCP 的作用和完整用户流程。
 - [团队开发规范](CONTRIBUTING.md)：gstack、Git Worktree、分支、Hunk、PR、两人分工、冲突与回退。
+- [明早双人启动与实时进度](docs/TEAM_START_TOMORROW.zh-CN.md)：A/B 的 AI 启动提示词、首日任务和进度板。
 - [开发执行与验证手册](.omx/plans/sopscape-council-development-execution-verification.zh-CN.md)
 - [产品与技术方案](.omx/plans/prd-sopscape-council.md)
 - [测试规范](.omx/plans/test-spec-sopscape-council.md)
@@ -22,3 +23,5 @@ SOPscape Council 把静态 SOP 转换成可决策、可验证、可分享的 AI 
 - 开发者 B：React、Three.js、GSAP、六个 UI 组件、决策体验、E2E 与前端性能。
 
 先合并 Contracts 和 Fixture，前后端再通过独立 Worktree 并行开发。任何功能都通过 PR、另一人审查、Hunk 和 CI 后进入 `main`。
+
+明早开始前，两人先按 [团队开发规范的“明早启动流程”](CONTRIBUTING.md#5-明早启动流程2026-07-22) 执行；不要直接凭口头分工修改 `main`。

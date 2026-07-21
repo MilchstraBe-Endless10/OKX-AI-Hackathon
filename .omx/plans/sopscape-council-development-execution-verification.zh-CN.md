@@ -117,7 +117,21 @@ artifacts/              本地验证证据，按日期或提交 SHA 分目录
 
 ## 6. 七天开发执行计划
 
-日期按 UTC。若实际开始时间发生变化，保持阶段依赖不变。
+比赛里程碑与截止时间按 UTC；下方“明早实际启动卡”的钟点按 Asia/Shanghai（CST, UTC+8）。若实际开始时间发生变化，保持阶段依赖不变。
+
+### 2026-07-22 明早实际启动卡
+
+当前应用源码尚未开始实现，因此明早不要直接跳到原计划 Day 2。先用半天补齐 Day 1 的工程基线，再进入纵向切片：
+
+| 顺序 | 开发者 A | 开发者 B | 合并/验证门槛 |
+|---|---|---|---|
+| 09:00 CST | 草拟 Issue，初始化 Workspace/Server/Contracts/Fixtures | 确认独立 Clone；阅读 PRD 与 A 的基线范围 | A 不创建或修改 `apps/web`；AI 默认不写 GitHub |
+| 10:30 CST | 冻结 Contract 与成功/失败 Fixture | 等待并准备 Review 清单，不改应用源码 | A 完成 RED/GREEN 和本地 Hunk |
+| 12:00 CST | 获授权后 Push 并创建基线 PR | Hunk、验证、Review A 的 PR | 干净安装、typecheck、build、test 有真实输出 |
+| 基线合并后 | 从最新 `origin/main` 创建 Core/A2MCP 分支 | 从同一最新 `origin/main` 创建 Web/3D 分支 | 合并动作需人工授权；此时才并行 |
+| 18:00 CST | 更新自己的 GitHub Issue/Project | 更新自己的 GitHub Issue/Project | GitHub 是唯一实时来源；启动表保持 Day-0 快照 |
+
+工作项的唯一闭环为：PRD/测试规范条目 → GitHub Issue → Branch/Worktree → 失败测试或 Fixture → 最小实现 → Hunk/本地验证 → PR → 对方 Review/CI → Squash Merge → Issue/Project Done。具体命令见根目录 `CONTRIBUTING.md`。
 
 ### Day 1：外部契约冻结与工程初始化（7/21）
 
