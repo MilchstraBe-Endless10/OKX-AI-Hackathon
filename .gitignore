@@ -1,0 +1,12 @@
+# gstack is installed per-user; never commit absolute links into a developer's home.
+.kiro/skills/
+.opencode/skills/
+
+# Local credentials and generated application output.
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+coverage/
+artifacts/

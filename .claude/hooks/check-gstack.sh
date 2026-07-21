@@ -1,7 +1,8 @@
 #!/bin/bash
 # Block skill usage when gstack is not installed globally.
 
-if [ ! -d "$HOME/.claude/skills/gstack/bin" ]; then
+if [ ! -x "$HOME/.claude/skills/gstack/setup" ] || \
+   [ ! -x "$HOME/.claude/skills/gstack/bin/gstack-team-init" ]; then
   cat >&2 <<'MSG'
 BLOCKED: gstack is not installed globally.
 

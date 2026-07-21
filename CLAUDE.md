@@ -1,6 +1,15 @@
 # CLAUDE.md
 
-## gstack
+## gstack（Claude Skill 调用必需）
+
+本项目使用每位开发者自己的全局 gstack 安装，不提交任何指向个人 `$HOME` 的项目内符号链接。
+
+```bash
+git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
+cd ~/.claude/skills/gstack && ./setup --team
+```
+
+`.claude/hooks/check-gstack.sh` 在 Claude 调用 Skill 前验证安装；它不是对所有 Bash/Edit 操作的通用拦截器。
 
 All web browsing MUST use the gstack `/browse` skill. Never use `mcp__claude-in-chrome__*` tools for browsing.
 
