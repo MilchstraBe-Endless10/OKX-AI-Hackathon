@@ -1,5 +1,5 @@
 {
-  "$comment": "Schema-valid decision input — VERSION_CONFLICT is a domain-level conflict, not a schema violation. Core state-machine test asserts the conflict behavior.",
+  "$comment": "Schema-valid decision input — VERSION_CONFLICT is a domain-level conflict, not a schema violation. This fixture represents a scenario that Schema accepts but Core would reject at runtime. Core state-machine implementation and VERSION_CONFLICT handling are TODO for a future Core/A2MCP PR.",
   "valid": true,
   "data": {
     "nodeId": "link-click",

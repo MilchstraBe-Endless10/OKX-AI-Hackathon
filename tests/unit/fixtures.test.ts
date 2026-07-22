@@ -13,8 +13,10 @@ import {
 
 // ponytail: only schema-level validation fixtures belong here.
 // Decision fixtures are always schema-valid; their "valid" field reflects
-// domain state (VERSION_CONFLICT, etc.), which Core validates separately
-// in tests/unit/state-machine.test.ts.
+// domain state (VERSION_CONFLICT, etc.), which Core will validate separately.
+// Core state-machine implementation and VERSION_CONFLICT handling are TODO
+// for a future Core/A2MCP PR — when implemented, tests must import from
+// packages/core (not inline test-only logic).
 type FixtureFile = { path: string; valid: boolean; data: unknown };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
