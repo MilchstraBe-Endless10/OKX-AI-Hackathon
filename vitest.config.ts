@@ -8,10 +8,11 @@ export default defineConfig({
         new URL('./packages/contracts/src/index.ts', import.meta.url),
       ),
       '@sopscape/core': fileURLToPath(new URL('./packages/core/src/index.ts', import.meta.url)),
+      '@sopscape/server': fileURLToPath(new URL('./apps/server/src/app.ts', import.meta.url)),
     },
   },
   test: {
-    include: ['tests/unit/**/*.test.ts'],
+    include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
     globals: false,
   },
 });

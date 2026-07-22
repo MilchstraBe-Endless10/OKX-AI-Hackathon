@@ -12,7 +12,7 @@
   "scripts": {
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml}\"",
-    "typecheck": "pnpm -r --parallel run typecheck",
+    "typecheck": "pnpm -r --filter './packages/**' run build && pnpm -r --parallel run typecheck",
     "lint": "eslint . --ext .ts,.tsx",
     "test:unit": "vitest run tests/unit",
     "test:fixtures": "vitest run tests/unit/fixtures.test.ts",

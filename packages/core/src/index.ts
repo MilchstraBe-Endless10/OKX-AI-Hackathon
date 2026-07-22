@@ -1,4 +1,20 @@
 // @sopscape/core — orchestration, lifecycle, budget, projections, persistence
-// Skeleton only in this PR; implementation arrives in the Core/A2MCP vertical slice.
-
-export const CORE_VERSION = '0.1.0' as const;
+export { CORE_VERSION } from './version.js';
+export {
+  isValidTransition,
+  applyDecision,
+  type LifecycleState,
+  type VersionedState,
+  type DecisionSuccess,
+  type DecisionConflict,
+} from './lifecycle.js';
+export { AttemptBudget } from './attempt-budget.js';
+export {
+  startGeneration,
+  FakeProvider,
+  SlowFakeProvider,
+  type GenerationResult,
+  type GenerationOptions,
+  type GenerationProgress,
+  type CouncilResult,
+} from './generate.js';
