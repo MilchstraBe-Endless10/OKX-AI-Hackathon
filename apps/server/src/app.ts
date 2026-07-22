@@ -6,6 +6,7 @@ import { startGeneration } from '@sopscape/core';
 // All real orchestration happens in @sopscape/core; this route only maps transport.
 
 const A2MCP_DEADLINE_MS = 58_000;
+const A2MCP_RESPONSE_RESERVE_MS = 2_000;
 
 function deadline(ms: number, signal: AbortSignal): Promise<never> {
   return new Promise((_, reject) => {
@@ -18,6 +19,13 @@ function deadline(ms: number, signal: AbortSignal): Promise<never> {
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({ logger: true });
+  const ingressStartedAt = new WeakMap<object, number>();
+
+  app.addHook('onRequest', async (request) => {
+    if (request.url === '/a2mcp/generate-rehearsal') {
+      ingressStartedAt.set(request, performance.now());
+    }
+  });
 
   app.get('/health/live', async () => ({ status: 'ok' }));
 
@@ -43,11 +51,17 @@ export function buildApp(): FastifyInstance {
     // Enforce 58s deadline with Promise.race
     const controller = new AbortController();
     const signal = controller.signal;
+    const startedAt = ingressStartedAt.get(request) ?? performance.now();
+    const workRemainingMs =
+      A2MCP_DEADLINE_MS - A2MCP_RESPONSE_RESERVE_MS - (performance.now() - startedAt);
 
     try {
+      if (workRemainingMs <= 0) {
+        throw new Error('DEADLINE_EXCEEDED');
+      }
       const result = await Promise.race([
         startGeneration(parsed.data, { signal }),
-        deadline(A2MCP_DEADLINE_MS, signal),
+        deadline(workRemainingMs, signal),
       ]);
 
       if (result.status === 'CANCELLED') {
@@ -95,9 +109,9 @@ export function buildApp(): FastifyInstance {
       if (error instanceof Error && error.message === 'DEADLINE_EXCEEDED') {
         controller.abort(); // Ensure Core is aborted
         return reply.code(504).send({
-          code: 'DEADLINE_EXCEEDED',
+          code: 'GENERATION_TIMEOUT',
           message: 'Generation exceeded 58s deadline',
-          retryable: false,
+          retryable: true,
           requestId: crypto.randomUUID(),
         });
       }
@@ -108,6 +122,9 @@ export function buildApp(): FastifyInstance {
         retryable: true,
         requestId: crypto.randomUUID(),
       });
+    } finally {
+      controller.abort();
+      ingressStartedAt.delete(request);
     }
   });
 
