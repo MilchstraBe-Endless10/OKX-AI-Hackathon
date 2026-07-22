@@ -1,5 +1,5 @@
 {
-  "$comment": "Malformed council result — empty consensus and missing unsupported field",
+  "$comment": "Malformed council result — empty consensus violates .min(1) on consensus array",
   "valid": false,
   "data": {
     "consensus": [],

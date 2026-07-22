@@ -101,4 +101,38 @@ describe('CouncilResultSchema', () => {
     const input = { ...validResult, disagreements: oversized };
     expect(() => CouncilResultSchema.parse(input)).toThrow();
   });
+
+  it('rejects oversized recommendedPath (>20)', () => {
+    const oversized = Array.from({ length: 21 }, (_, i) => `action-${i}`);
+    const input = { ...validResult, recommendedPath: oversized };
+    expect(() => CouncilResultSchema.parse(input)).toThrow();
+  });
+
+  it('rejects oversized decisionNodes (>30)', () => {
+    const oversized = Array.from({ length: 31 }, (_, i) => ({
+      id: `node-${i}`,
+      prompt: `prompt-${i}`,
+      options: [
+        { id: 'a', label: 'option-a', consequence: 'c' },
+        { id: 'b', label: 'option-b', consequence: 'd' },
+      ],
+    }));
+    const input = { ...validResult, decisionNodes: oversized };
+    expect(() => CouncilResultSchema.parse(input)).toThrow();
+  });
+
+  it('rejects oversized evidenceGaps (>30)', () => {
+    const oversized = Array.from({ length: 31 }, (_, i) => ({
+      description: `gap-${i}`,
+      refs: [`ref-${i}`],
+    }));
+    const input = { ...validResult, evidenceGaps: oversized };
+    expect(() => CouncilResultSchema.parse(input)).toThrow();
+  });
+
+  it('rejects finding missing required unsupported field', () => {
+    const { unsupported: _u, ...withoutUnsupported } = validResult.consensus[0];
+    const input = { ...validResult, consensus: [withoutUnsupported] };
+    expect(() => CouncilResultSchema.parse(input)).toThrow();
+  });
 });

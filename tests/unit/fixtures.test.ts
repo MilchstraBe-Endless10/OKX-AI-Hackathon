@@ -13,7 +13,8 @@ import {
 
 // ponytail: only schema-level validation fixtures belong here.
 // Decision fixtures are always schema-valid; their "valid" field reflects
-// domain state (VERSION_CONFLICT, etc.), which Core validates separately.
+// domain state (VERSION_CONFLICT, etc.), which Core validates separately
+// in tests/unit/state-machine.test.ts.
 type FixtureFile = { path: string; valid: boolean; data: unknown };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -59,7 +60,7 @@ for (const { dir, parse } of schemas) {
 describe('fixtures: decision', () => {
   const fixtures = loadFixtures('decision');
 
-  it('all decision fixtures pass schema validation (at least one shape matches)', () => {
+  it('all decision fixtures are schema-valid (either DecisionInput or DecisionResult shape)', () => {
     for (const fixture of fixtures) {
       const tryInput = () => DecisionInputSchema.parse(fixture.data);
       const tryResult = () => DecisionResultSchema.parse(fixture.data);

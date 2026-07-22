@@ -5,5 +5,7 @@ dist/
 .hunk/
 ponytail/
 .github/
+venv/
+.clawhub/
 # Pre-existing team docs have their own formatting; avoid CJK reflow noise
 *.md

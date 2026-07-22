@@ -1,10 +1,9 @@
 {
-  "$comment": "Stale version conflict — another writer already incremented",
-  "valid": false,
+  "$comment": "Schema-valid decision input — VERSION_CONFLICT is a domain-level conflict, not a schema violation. Core state-machine test asserts the conflict behavior.",
+  "valid": true,
   "data": {
     "nodeId": "link-click",
     "choiceId": "verify",
     "expectedVersion": 3
-  },
-  "expectedError": "VERSION_CONFLICT"
+  }
 }
