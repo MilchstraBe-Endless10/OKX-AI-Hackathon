@@ -9,7 +9,8 @@
         "evidenceRefs": ["step-8"],
         "confidence": 0.8,
         "severity": "low",
-        "affectedStepIds": ["step-8"]
+        "affectedStepIds": ["step-8"],
+        "unsupported": false
       }
     ],
     "disagreements": [

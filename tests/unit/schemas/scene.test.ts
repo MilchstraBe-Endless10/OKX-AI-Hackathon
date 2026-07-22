@@ -58,4 +58,42 @@ describe('SceneSchema', () => {
     };
     expect(() => SceneSchema.parse(input)).toThrow();
   });
+
+  // Issue 4: bounded array tests
+  it('rejects oversized agentStates (>20)', () => {
+    const oversized = Array.from({ length: 21 }, (_, i) => ({
+      ...validScene.agentStates[0],
+      id: `agent-${i}`,
+    }));
+    const input = { ...validScene, agentStates: oversized };
+    expect(() => SceneSchema.parse(input)).toThrow();
+  });
+
+  it('rejects oversized riskPaths (>50)', () => {
+    const oversized = Array.from({ length: 51 }, (_, i) => ({
+      ...validScene.riskPaths[0],
+      id: `rp-${i}`,
+    }));
+    const input = { ...validScene, riskPaths: oversized };
+    expect(() => SceneSchema.parse(input)).toThrow();
+  });
+
+  it('rejects oversized cameraCues (>20)', () => {
+    const cues = Array.from({ length: 21 }, (_, i) => {
+      const allCues = [
+        'agent-arrival',
+        'consensus-reveal',
+        'disagreement-highlight',
+        'evidence-node-show',
+        'risk-path-trace',
+        'decision-focus',
+        'consequence-pan',
+        'palette-shift',
+        'idle',
+      ] as const;
+      return allCues[i % allCues.length];
+    });
+    const input = { ...validScene, cameraCues: cues };
+    expect(() => SceneSchema.parse(input)).toThrow();
+  });
 });

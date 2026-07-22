@@ -10,6 +10,7 @@ const validResult = {
       confidence: 0.9,
       severity: 'high',
       affectedStepIds: ['step-1'],
+      unsupported: false,
     },
   ],
   disagreements: [],
@@ -75,6 +76,29 @@ describe('CouncilResultSchema', () => {
       ...validResult,
       decisionNodes: [{ id: 'x', prompt: 'p', options: [] }],
     };
+    expect(() => CouncilResultSchema.parse(input)).toThrow();
+  });
+
+  // Issue 4: bounded array tests
+  it('rejects oversized consensus (>50 findings)', () => {
+    const oversized = Array.from({ length: 51 }, () => validResult.consensus[0]);
+    const input = { ...validResult, consensus: oversized };
+    expect(() => CouncilResultSchema.parse(input)).toThrow();
+  });
+
+  it('rejects oversized disagreements (>20)', () => {
+    const oversized = Array.from(
+      { length: 21 },
+      () =>
+        validResult.disagreements[0] ?? {
+          topic: 't',
+          positions: [
+            { role: 'moderator' as const, stance: 's' },
+            { role: 'moderator' as const, stance: 'x' },
+          ],
+        },
+    );
+    const input = { ...validResult, disagreements: oversized };
     expect(() => CouncilResultSchema.parse(input)).toThrow();
   });
 });

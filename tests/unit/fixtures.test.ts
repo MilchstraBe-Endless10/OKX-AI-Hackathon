@@ -1,18 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   SopInputSchema,
   CouncilResultSchema,
   SceneSchema,
+  ApiErrorSchema,
   DecisionInputSchema,
   DecisionResultSchema,
-  ApiErrorSchema,
 } from '@sopscape/contracts';
 
+// ponytail: only schema-level validation fixtures belong here.
+// Decision fixtures are always schema-valid; their "valid" field reflects
+// domain state (VERSION_CONFLICT, etc.), which Core validates separately.
 type FixtureFile = { path: string; valid: boolean; data: unknown };
 
-const FIXTURES_ROOT = join(process.cwd(), 'tests', 'fixtures');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const FIXTURES_ROOT = join(__dirname, '..', 'fixtures');
 
 function loadFixtures(dir: string): FixtureFile[] {
   const fullPath = join(FIXTURES_ROOT, dir);
@@ -52,21 +57,28 @@ for (const { dir, parse } of schemas) {
 }
 
 describe('fixtures: decision', () => {
-  // success-verify.json uses DecisionResult shape; failure-stale-version uses DecisionInput shape
-  const inputFixture = loadFixtures('decision').find((f) =>
-    f.path.includes('failure-stale-version'),
-  );
-  const resultFixture = loadFixtures('decision').find((f) => f.path.includes('success-verify'));
+  const fixtures = loadFixtures('decision');
 
-  it('accepts valid decision input', () => {
-    if (inputFixture) {
-      expect(() => DecisionInputSchema.parse(inputFixture.data)).not.toThrow();
-    }
-  });
-
-  it('accepts valid decision result', () => {
-    if (resultFixture) {
-      expect(() => DecisionResultSchema.parse(resultFixture.data)).not.toThrow();
+  it('all decision fixtures pass schema validation (at least one shape matches)', () => {
+    for (const fixture of fixtures) {
+      const tryInput = () => DecisionInputSchema.parse(fixture.data);
+      const tryResult = () => DecisionResultSchema.parse(fixture.data);
+      let matched = false;
+      try {
+        tryInput();
+        matched = true;
+      } catch {
+        try {
+          tryResult();
+          matched = true;
+        } catch {
+          // no-op
+        }
+      }
+      expect(
+        matched,
+        `Fixture ${fixture.path} matches neither DecisionInput nor DecisionResult shape`,
+      ).toBe(true);
     }
   });
 });

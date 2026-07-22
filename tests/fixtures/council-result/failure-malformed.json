@@ -1,5 +1,5 @@
 {
-  "$comment": "Malformed council result — empty consensus and invalid confidence",
+  "$comment": "Malformed council result — empty consensus and missing unsupported field",
   "valid": false,
   "data": {
     "consensus": [],

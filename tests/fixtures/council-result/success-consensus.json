@@ -9,7 +9,8 @@
         "evidenceRefs": ["step-1", "step-5"],
         "confidence": 0.92,
         "severity": "high",
-        "affectedStepIds": ["step-1", "step-2", "step-5"]
+        "affectedStepIds": ["step-1", "step-2", "step-5"],
+        "unsupported": false
       },
       {
         "role": "risk-challenger",
@@ -17,7 +18,8 @@
         "evidenceRefs": ["step-2"],
         "confidence": 0.88,
         "severity": "critical",
-        "affectedStepIds": ["step-2"]
+        "affectedStepIds": ["step-2"],
+        "unsupported": false
       },
       {
         "role": "evidence-auditor",
@@ -25,7 +27,8 @@
         "evidenceRefs": ["step-5"],
         "confidence": 0.85,
         "severity": "medium",
-        "affectedStepIds": ["step-5"]
+        "affectedStepIds": ["step-5"],
+        "unsupported": false
       }
     ],
     "disagreements": [],

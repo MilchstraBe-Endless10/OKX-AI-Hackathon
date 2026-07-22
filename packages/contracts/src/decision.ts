@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+const MAX_NODE_IDS = 50;
+const MAX_PATH_IDS = 50;
+
 export const DecisionInputSchema = z
   .object({
     nodeId: z.string().min(1),
@@ -14,14 +17,14 @@ export const DecisionResultSchema = z
     confidence: z.number().min(0).max(1),
     topology: z
       .object({
-        updatedNodes: z.array(z.string().min(1)),
-        removedPaths: z.array(z.string().min(1)),
+        updatedNodes: z.array(z.string().min(1)).max(MAX_NODE_IDS),
+        removedPaths: z.array(z.string().min(1)).max(MAX_PATH_IDS),
       })
       .strict(),
     consequence: z
       .object({
-        summary: z.string().min(1),
-        nextAction: z.string().min(1),
+        summary: z.string().min(1).max(1000),
+        nextAction: z.string().min(1).max(1000),
       })
       .strict(),
   })
