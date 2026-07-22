@@ -1,5 +1,5 @@
-// @sopscape/core — orchestration: startGeneration with fixture-driven FakeProvider
-// ponytail: minimal orchestration — no real model, no DB, no MCP.
+// @sopscape/core — orchestration: startGeneration with real LLM provider
+// ponytail: minimal orchestration — LLMProvider for real calls, FakeProvider for tests.
 // Fixed order: 3 specialists parallel → moderator → persist.
 
 import {
@@ -10,6 +10,7 @@ import {
 } from '@sopscape/contracts';
 import { AttemptBudget } from './attempt-budget.js';
 import { LifecycleState } from './lifecycle.js';
+import { LLMProvider, type LLMConfig } from './llm-provider.js';
 
 export type { CouncilResult };
 
@@ -23,77 +24,107 @@ export interface GenerationResult {
 export interface GenerationOptions {
   progressSink?: (event: { phase: LifecycleState }) => void;
   signal?: AbortSignal;
+  /** LLM config — if omitted, uses FakeProvider (for tests). */
+  llm?: LLMConfig;
 }
 
 export interface GenerationProgress {
   phase: LifecycleState;
 }
 
-/**
- * FakeProvider produces deterministic CouncilResult fixtures.
- * No real model calls.
- */
-export class FakeProvider {
-  private failRole?: string;
-  readonly execOrder: string[] = [];
+function emit(
+  sink: ((e: { phase: LifecycleState }) => void) | undefined,
+  phase: LifecycleState,
+): void {
+  sink?.({ phase });
+}
 
-  setFailRole(role: string): void {
-    this.failRole = role;
+let counter = 0;
+function genId(): string {
+  counter += 1;
+  return `r-${Date.now()}-${counter}`;
+}
+
+/**
+ * startGeneration — the Core API entry point.
+ * Uses LLMProvider when llm config is provided, FakeProvider otherwise (for tests).
+ * Preserves AttemptBudget, AbortSignal, and Schema validation.
+ */
+export async function startGeneration(
+  input: { title: string; content: string; locale?: string },
+  options?: GenerationOptions,
+): Promise<GenerationResult> {
+  const { progressSink, signal, llm } = options ?? {};
+
+  // Check abort before starting
+  if (signal?.aborted) {
+    return { rehearsalId: genId(), status: 'CANCELLED', error: 'ABORTED' };
   }
 
-  async run(
-    input: { title: string; content: string; locale?: string },
-    options?: GenerationOptions,
-  ): Promise<GenerationResult> {
-    const { progressSink, signal } = options ?? {};
+  // Validate input at schema level
+  const parsed = SopInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return { rehearsalId: genId(), status: 'FAILED', error: 'VALIDATION_ERROR' };
+  }
 
-    // Check abort before starting
-    if (signal?.aborted) {
-      return { rehearsalId: genId(), status: 'CANCELLED', error: 'ABORTED' };
+  const rehearsalId = genId();
+  const budget = new AttemptBudget({ compression: false });
+
+  // QUEUED
+  emit(progressSink, 'QUEUED');
+
+  // SPECIALISTS_RUNNING — 3 parallel
+  emit(progressSink, 'SPECIALISTS_RUNNING');
+
+  try {
+    if (llm) {
+      // Real LLM provider path
+      const provider = new LLMProvider(llm);
+      const findings = await provider.runSpecialists(input, budget, signal);
+
+      if (signal?.aborted) {
+        return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
+      }
+
+      // MODERATING
+      emit(progressSink, 'MODERATING');
+
+      const moderation = await provider.runModerator(findings, budget, signal);
+      const council: CouncilResult = {
+        consensus: moderation.consensus,
+        disagreements: moderation.disagreements,
+        evidenceGaps: moderation.evidenceGaps,
+        recommendedPath: moderation.recommendedPath,
+        decisionNodes: moderation.decisionNodes,
+      };
+
+      // Validate council result
+      const councilParsed = CouncilResultSchema.safeParse(council);
+      if (!councilParsed.success) {
+        return { rehearsalId, status: 'FAILED', error: 'COUNCIL_VALIDATION_FAILED' };
+      }
+
+      // PERSISTING
+      emit(progressSink, 'PERSISTING');
+
+      // READY
+      emit(progressSink, 'READY');
+
+      return { rehearsalId, status: 'READY', council };
     }
 
-    // Validate input at schema level
-    const parsed = SopInputSchema.safeParse(input);
-    if (!parsed.success) {
-      return { rehearsalId: genId(), status: 'FAILED', error: 'VALIDATION_ERROR' };
-    }
-
-    const rehearsalId = genId();
-    const budget = new AttemptBudget({ compression: false });
-
-    // QUEUED
-    emit(progressSink, 'QUEUED');
-
-    // SPECIALISTS_RUNNING — 3 parallel
-    emit(progressSink, 'SPECIALISTS_RUNNING');
-
+    // FakeProvider path (for tests — no LLM config)
     const roles = ['procedure-analyst', 'risk-challenger', 'evidence-auditor'] as const;
 
-    // Run specialists in parallel — fail-fast if any throws
-    let specialists: Array<{
-      role: (typeof roles)[number];
-      finding: Finding;
-    }>;
-    try {
-      const specialistResults = await Promise.all(
-        roles.map((role) =>
-          (async () => {
-            budget.startAttempt(role);
-            if (this.failRole === role) {
-              throw new Error('PROVIDER_FAILURE');
-            }
-            return {
-              role,
-              finding: makeFixtureFinding(role, input.title),
-            };
-          })(),
-        ),
-      );
-      specialists = specialistResults;
-    } catch {
-      return { rehearsalId, status: 'FAILED', error: 'SPECIALIST_FAILED' };
-    }
-    this.execOrder.push('specialists-parallel');
+    const specialists = await Promise.all(
+      roles.map(async (role) => {
+        budget.startAttempt(role);
+        return {
+          role,
+          finding: makeFixtureFinding(role, input.title),
+        };
+      }),
+    );
 
     if (signal?.aborted) {
       return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
@@ -131,8 +162,6 @@ export class FakeProvider {
       return { rehearsalId, status: 'FAILED', error: 'COUNCIL_VALIDATION_FAILED' };
     }
 
-    this.execOrder.push('moderator');
-
     // PERSISTING
     emit(progressSink, 'PERSISTING');
 
@@ -140,107 +169,13 @@ export class FakeProvider {
     emit(progressSink, 'READY');
 
     return { rehearsalId, status: 'READY', council };
-  }
-}
-
-/**
- * SlowFakeProvider — test-only variant that delays execution for deadline testing.
- */
-export class SlowFakeProvider extends FakeProvider {
-  private delayMs: number;
-
-  constructor(delayMs: number = 100) {
-    super();
-    this.delayMs = delayMs;
-  }
-
-  override async run(
-    input: { title: string; content: string; locale?: string },
-    options?: GenerationOptions,
-  ): Promise<GenerationResult> {
-    const { progressSink, signal } = options ?? {};
-
-    // Check abort before starting
-    if (signal?.aborted) {
-      return { rehearsalId: genId(), status: 'CANCELLED', error: 'ABORTED' };
-    }
-
-    // Validate input at schema level
-    const parsed = SopInputSchema.safeParse(input);
-    if (!parsed.success) {
-      return { rehearsalId: genId(), status: 'FAILED', error: 'VALIDATION_ERROR' };
-    }
-
-    const rehearsalId = genId();
-
-    // QUEUED
-    emit(progressSink, 'QUEUED');
-
-    // SPECIALISTS_RUNNING — 3 parallel (with delay)
-    emit(progressSink, 'SPECIALISTS_RUNNING');
-
-    // Artificial delay to test deadline
-    await new Promise((resolve) => setTimeout(resolve, this.delayMs));
-
-    // Check abort after delay
-    if (signal?.aborted) {
-      return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
-    }
-
-    // Rest of the flow is the same as FakeProvider
-    const roles = ['procedure-analyst', 'risk-challenger', 'evidence-auditor'] as const;
-
-    const specialists = roles.map((role) => ({
-      role,
-      finding: makeFixtureFinding(role, input.title),
-    }));
-
-    // MODERATING
-    emit(progressSink, 'MODERATING');
-
-    const council: CouncilResult = {
-      consensus: specialists.map((s) => s.finding),
-      disagreements: [],
-      evidenceGaps: [],
-      recommendedPath: ['verify', 'report'],
-      decisionNodes: [
-        {
-          id: 'action',
-          prompt: '如何处理此 SOP？',
-          options: [
-            { id: 'execute', label: '执行', consequence: 'done' },
-            { id: 'review', label: '复核后执行', consequence: 'verified' },
-          ],
-        },
-      ],
+  } catch (error) {
+    return {
+      rehearsalId,
+      status: 'FAILED',
+      error: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
     };
-
-    const councilParsed = CouncilResultSchema.safeParse(council);
-    if (!councilParsed.success) {
-      return { rehearsalId, status: 'FAILED', error: 'COUNCIL_VALIDATION_FAILED' };
-    }
-
-    // PERSISTING
-    emit(progressSink, 'PERSISTING');
-
-    // READY
-    emit(progressSink, 'READY');
-
-    return { rehearsalId, status: 'READY', council };
   }
-}
-
-function emit(
-  sink: ((e: { phase: LifecycleState }) => void) | undefined,
-  phase: LifecycleState,
-): void {
-  sink?.({ phase });
-}
-
-let counter = 0;
-function genId(): string {
-  counter += 1;
-  return `r-${Date.now()}-${counter}`;
 }
 
 function makeFixtureFinding(role: string, title: string): Finding {
@@ -255,18 +190,10 @@ function makeFixtureFinding(role: string, title: string): Finding {
   };
 }
 
-/**
- * startGeneration — the Core API entry point.
- * Uses FakeProvider for this vertical slice; replace with real provider later.
- */
-export async function startGeneration(
-  input: { title: string; content: string; locale?: string },
-  options?: GenerationOptions,
-): Promise<GenerationResult> {
-  const provider = new FakeProvider();
-  return provider.run(input, options);
-}
+// Re-exports for tests
+export { FakeProvider, SlowFakeProvider } from './generate-fake.js';
 
 export { isValidTransition } from './lifecycle.js';
 export { applyDecision, type VersionedState, type LifecycleState } from './lifecycle.js';
 export { AttemptBudget } from './attempt-budget.js';
+export { LLMProvider, type LLMConfig } from './llm-provider.js';

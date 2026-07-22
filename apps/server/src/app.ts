@@ -7,6 +7,14 @@ import { startGeneration } from '@sopscape/core';
 
 const A2MCP_DEADLINE_MS = 58_000;
 
+function getLLMConfig(): { apiKey: string; baseUrl: string; model: string } | null {
+  const apiKey = process.env.MODEL_API_KEY;
+  const baseUrl = process.env.MODEL_BASE_URL;
+  const model = process.env.MODEL_NAME;
+  if (!apiKey || !baseUrl || !model) return null;
+  return { apiKey, baseUrl, model };
+}
+
 function deadline(ms: number, signal: AbortSignal): Promise<never> {
   return new Promise((_, reject) => {
     const timeout = setTimeout(() => {
@@ -22,9 +30,12 @@ export function buildApp(): FastifyInstance {
   app.get('/health/live', async () => ({ status: 'ok' }));
 
   app.get('/health/ready', async (_request, reply) => {
+    const llmConfig = getLLMConfig();
     return reply.code(503).send({
       status: 'not_ready',
-      reason: 'database and admission not configured',
+      reason: llmConfig
+        ? 'database and admission not configured'
+        : 'MODEL_API_KEY, MODEL_BASE_URL, and MODEL_NAME environment variables required',
     });
   });
 
@@ -43,10 +54,11 @@ export function buildApp(): FastifyInstance {
     // Enforce 58s deadline with Promise.race
     const controller = new AbortController();
     const signal = controller.signal;
+    const llmConfig = getLLMConfig();
 
     try {
       const result = await Promise.race([
-        startGeneration(parsed.data, { signal }),
+        startGeneration(parsed.data, { signal, llm: llmConfig ?? undefined }),
         deadline(A2MCP_DEADLINE_MS, signal),
       ]);
 
