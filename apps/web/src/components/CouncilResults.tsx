@@ -4,7 +4,7 @@ import type { CouncilResult } from '@sopscape/contracts';
 interface CouncilResultsProps {
   phase: UIPhase;
   rehearsalId: string | null;
-  result: CouncilResult;
+  result: CouncilResult | null;
   selectedDecision?: string | null;
   onDecision?: (choiceId: string) => void;
 }
@@ -70,6 +70,10 @@ export default function CouncilResults({
         </p>
       </div>
     );
+  }
+
+  if (!result) {
+    return <div role="alert">A2MCP returned no council result.</div>;
   }
 
   // READY state — show fixture results
@@ -164,6 +168,9 @@ function Decisions({
   selectedDecision: string | null;
   onDecision?: (choiceId: string) => void;
 }) {
+  const riskyChoiceId = nodes[0]?.options[0]?.id;
+  const isSafe = selectedDecision !== riskyChoiceId;
+
   return (
     <div className="space-y-2">
       {rehearsalId && <p className="text-xs text-slate-500 font-mono">Session {rehearsalId}</p>}
@@ -187,13 +194,13 @@ function Decisions({
       ))}
       {selectedDecision && (
         <div
-          className={`decision-result ${selectedDecision === 'verify' ? 'is-safe' : 'is-risk'}`}
+          className={`decision-result ${isSafe ? 'is-safe' : 'is-risk'}`}
           role="status"
           aria-live="polite"
         >
-          <strong>{selectedDecision === 'verify' ? '安全路径已锁定' : '风险路径已触发'}</strong>
+          <strong>{isSafe ? '安全路径已锁定' : '风险路径已触发'}</strong>
           <p>
-            {selectedDecision === 'verify'
+            {isSafe
               ? '核心转为稳定态，风险链路收束，并记录独立核验与上报。'
               : '核心进入告警态，凭证泄漏路径被高亮，建议立即隔离并修改密码。'}
           </p>

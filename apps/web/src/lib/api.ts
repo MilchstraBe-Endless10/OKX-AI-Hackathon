@@ -59,3 +59,82 @@ export const PHASE_ORDER: GenerationPhase[] = [
   'PERSISTING',
   'READY',
 ];
+
+export interface A2mcpResponse {
+  rehearsalId: string;
+  status: 'READY';
+  council: CouncilResult;
+}
+
+export async function generateRehearsal(
+  input: SopInput,
+  request: typeof fetch = fetch,
+): Promise<A2mcpResponse> {
+  const response = await request('/a2mcp/generate-rehearsal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const body: unknown = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message =
+      body && typeof body === 'object' && 'message' in body && typeof body.message === 'string'
+        ? body.message
+        : `A2MCP request failed (${response.status})`;
+    throw new Error(message);
+  }
+  if (!body || typeof body !== 'object') throw new Error('Invalid A2MCP response');
+
+  const { rehearsalId, status, ...councilData } = body as Record<string, unknown>;
+  const council = CouncilResultSchema.safeParse(councilData);
+  if (typeof rehearsalId !== 'string' || status !== 'READY' || !council.success) {
+    throw new Error('Invalid A2MCP response');
+  }
+
+  return { rehearsalId, status, council: council.data };
+}
+
+export function councilToScene(council: CouncilResult): Scene {
+  const agents = new Map(
+    council.consensus
+      .filter((finding) => finding.role !== 'moderator')
+      .map((finding) => [
+        finding.role,
+        { id: finding.role, confidence: finding.confidence, status: 'complete' as const },
+      ]),
+  );
+  const evidence = new Map<string, string>();
+  council.consensus.forEach((finding) =>
+    finding.evidenceRefs.forEach((ref) => evidence.set(ref, finding.claim)),
+  );
+  council.evidenceGaps.forEach((gap) =>
+    gap.refs.forEach((ref) => evidence.set(ref, gap.description)),
+  );
+
+  return SceneSchema.parse({
+    schemaVersion: '1.0.0',
+    agentStates: [...agents.values()],
+    evidenceNodes: [...evidence].slice(0, 100).map(([ref, label], index) => ({
+      id: `evidence-${index + 1}`,
+      ref,
+      label,
+    })),
+    riskPaths: council.disagreements.slice(0, 50).map((item, index) => ({
+      id: `risk-${index + 1}`,
+      from: item.positions[0]?.role ?? 'moderator',
+      to: item.positions[1]?.role ?? 'moderator',
+      severity: 'high',
+    })),
+    decisionNodes: council.decisionNodes.map((node) => ({ id: node.id, label: node.prompt })),
+    cameraCues: ['agent-arrival', 'consensus-reveal', 'evidence-node-show', 'decision-focus'],
+    paletteToken: 'neutral',
+  });
+}
+import {
+  CouncilResultSchema,
+  SceneSchema,
+  type CouncilResult,
+  type Scene,
+  type SopInput,
+} from '@sopscape/contracts';

@@ -4,16 +4,18 @@ import CommandRoom from './scene/CommandRoom';
 import SopInput from './components/SopInput';
 import ProgressPanel from './components/ProgressPanel';
 import CouncilResults from './components/CouncilResults';
-import type { GenerationPhase, UIPhase } from './lib/api';
-import { COUNCIL_FIXTURE, SCENE_FIXTURE } from './lib/fixtures';
+import { councilToScene, generateRehearsal, type GenerationPhase, type UIPhase } from './lib/api';
+import type { CouncilResult, Scene, SopInput as SopInputValue } from '@sopscape/contracts';
 
-const FIXTURE_PHASES: GenerationPhase[] = [
-  'COMPRESSING',
-  'SPECIALISTS_RUNNING',
-  'MODERATING',
-  'PERSISTING',
-  'READY',
-];
+const EMPTY_SCENE: Scene = {
+  schemaVersion: '1.0.0',
+  agentStates: [],
+  evidenceNodes: [],
+  riskPaths: [],
+  decisionNodes: [],
+  cameraCues: ['idle'],
+  paletteToken: 'neutral',
+};
 
 const EXPERT_COPY = {
   'procedure-analyst': {
@@ -41,18 +43,12 @@ type SceneView = 'consensus' | 'risk' | 'evidence';
 export default function App() {
   const [phase, setPhase] = useState<UIPhase>('idle');
   const [rehearsalId, setRehearsalId] = useState<string | null>(null);
+  const [council, setCouncil] = useState<CouncilResult | null>(null);
+  const [scene, setScene] = useState<Scene>(EMPTY_SCENE);
+  const [submittedSop, setSubmittedSop] = useState<SopInputValue | null>(null);
   const [selectedDecision, setSelectedDecision] = useState<string | null>(null);
   const [sceneView, setSceneView] = useState<SceneView>('consensus');
   const shellRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (phase === 'idle' || phase === 'READY') return;
-    const nextPhase = FIXTURE_PHASES[FIXTURE_PHASES.indexOf(phase) + 1];
-    if (!nextPhase) return;
-    const delay = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 120 : 700;
-    const timer = window.setTimeout(() => setPhase(nextPhase), delay);
-    return () => window.clearTimeout(timer);
-  }, [phase]);
 
   useEffect(() => {
     if (!shellRef.current || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -68,21 +64,48 @@ export default function App() {
     return () => context.revert();
   }, []);
 
-  const phaseIndex = phase === 'idle' ? 0 : Math.max(FIXTURE_PHASES.indexOf(phase) + 1, 1);
-  const progress = phase === 'READY' ? 100 : Math.round((phaseIndex / FIXTURE_PHASES.length) * 100);
+  const progress = phase === 'idle' ? 0 : phase === 'READY' || phase === 'FAILED' ? 100 : 55;
+  const firstChoiceId = council?.decisionNodes[0]?.options[0]?.id;
+  const consensusScore = council?.consensus.length
+    ? Math.round(
+        (council.consensus.reduce((sum, finding) => sum + finding.confidence, 0) /
+          council.consensus.length) *
+          100,
+      )
+    : 0;
+  const evidenceTotal = scene.evidenceNodes.length + (council?.evidenceGaps.length ?? 0);
   const decisionState =
-    selectedDecision === 'click' ? 'risk' : selectedDecision === 'verify' ? 'safe' : null;
+    selectedDecision && selectedDecision === firstChoiceId
+      ? 'risk'
+      : selectedDecision
+        ? 'safe'
+        : null;
 
-  function startRehearsal() {
+  async function startRehearsal(input: SopInputValue) {
     setSelectedDecision(null);
     setSceneView('consensus');
-    setRehearsalId('fixture-rehearsal-001');
-    setPhase('COMPRESSING');
+    setRehearsalId(null);
+    setCouncil(null);
+    setScene(EMPTY_SCENE);
+    setSubmittedSop(input);
+    setPhase('SPECIALISTS_RUNNING');
+    try {
+      const response = await generateRehearsal(input);
+      setRehearsalId(response.rehearsalId);
+      setCouncil(response.council);
+      setScene(councilToScene(response.council));
+      setPhase('READY');
+    } catch {
+      setPhase('FAILED');
+    }
   }
 
   function resetRehearsal() {
     setSelectedDecision(null);
     setRehearsalId(null);
+    setCouncil(null);
+    setScene(EMPTY_SCENE);
+    setSubmittedSop(null);
     setPhase('idle');
   }
 
@@ -123,7 +146,9 @@ export default function App() {
                 ? '等待 SOP 输入'
                 : phase === 'READY'
                   ? '议会结果已生成'
-                  : '三专家正在审议'}
+                  : phase === 'FAILED'
+                    ? 'A2MCP 调用失败'
+                    : '三专家正在审议'}
             </span>
             <div className="phase-track">
               <i style={{ width: `${progress}%` }} />
@@ -131,7 +156,7 @@ export default function App() {
             <span>{progress}%</span>
           </div>
           <button className="new-rehearsal" onClick={phase === 'idle' ? undefined : resetRehearsal}>
-            {phase === 'idle' ? 'Fixture 演示' : '＋ 新建演练'}
+            {phase === 'idle' ? 'A2MCP 在线' : '＋ 新建演练'}
           </button>
         </header>
 
@@ -146,19 +171,19 @@ export default function App() {
               <div className="panel-scroll">
                 <article className="sop-brief">
                   <span>当前 SOP · PHISHING RESPONSE</span>
-                  <strong>收到疑似钓鱼邮件后的处置流程</strong>
-                  <p>核验身份、隔离风险并完成安全上报。当前演练包含一个关键决策节点。</p>
+                  <strong>{submittedSop?.title}</strong>
+                  <p>{submittedSop?.content}</p>
                   <div>
-                    <i>5 个流程步骤</i>
-                    <i>高风险</i>
-                    <i>中文</i>
+                    <i>{council?.recommendedPath.length ?? 0} 个推荐步骤</i>
+                    <i>{council?.decisionNodes.length ?? 0} 个决策节点</i>
+                    <i>{submittedSop?.locale ?? 'zh-CN'}</i>
                   </div>
                 </article>
                 {phase !== 'READY' && (
                   <ProgressPanel phase={phase as GenerationPhase} rehearsalId={rehearsalId} />
                 )}
                 <div className="expert-list">
-                  {SCENE_FIXTURE.agentStates.map((agent) => {
+                  {scene.agentStates.map((agent) => {
                     const copy = EXPERT_COPY[agent.id as keyof typeof EXPERT_COPY];
                     if (!copy) return null;
                     const score = Math.round(agent.confidence * 100);
@@ -172,7 +197,10 @@ export default function App() {
                           </div>
                           <b>{score}%</b>
                         </div>
-                        <p>{copy.summary}</p>
+                        <p>
+                          {council?.consensus.find((finding) => finding.role === agent.id)?.claim ??
+                            copy.summary}
+                        </p>
                         <div className="expert-progress">
                           <i style={{ width: `${score}%` }} />
                         </div>
@@ -214,21 +242,25 @@ export default function App() {
             <div className="scene-stage">
               <CommandRoom
                 phase={phase}
-                scene={SCENE_FIXTURE}
-                decisionChoice={selectedDecision}
+                scene={scene}
+                decisionChoice={
+                  decisionState === 'risk' ? 'click' : decisionState === 'safe' ? 'verify' : null
+                }
                 view={sceneView}
               />
               <article className="scene-seat seat-procedure">
                 <b>● 流程席位</b>
-                <span>独立核验 → 截图留证 → 上报</span>
+                <span>{council?.recommendedPath.join(' → ') || '等待 A2MCP 分析'}</span>
               </article>
               <article className="scene-seat seat-risk">
                 <b>● 风险席位</b>
-                <span>链接点击 → 凭证泄漏 → 接管</span>
+                <span>{council?.disagreements.length ?? 0} 条分歧路径</span>
               </article>
               <article className="scene-seat seat-evidence">
                 <b>● 证据席位</b>
-                <span>2 项证据 · 1 项缺口</span>
+                <span>
+                  {scene.evidenceNodes.length} 项证据 · {council?.evidenceGaps.length ?? 0} 项缺口
+                </span>
               </article>
               <div className="core-caption">
                 <strong>
@@ -254,16 +286,22 @@ export default function App() {
               <div className="scene-metrics">
                 <div>
                   <b>
-                    {decisionState === 'safe' ? '96%' : decisionState === 'risk' ? '42%' : '86%'}
+                    {decisionState === 'safe'
+                      ? '96%'
+                      : decisionState === 'risk'
+                        ? '42%'
+                        : `${consensusScore}%`}
                   </b>
                   <span>共识强度</span>
                 </div>
                 <div>
-                  <b>{decisionState === 'safe' ? '低' : '高'}</b>
+                  <b>{decisionState === 'safe' ? '低' : decisionState === 'risk' ? '高' : '中'}</b>
                   <span>当前风险</span>
                 </div>
                 <div>
-                  <b>4 / 5</b>
+                  <b>
+                    {scene.evidenceNodes.length} / {evidenceTotal}
+                  </b>
                   <span>证据覆盖</span>
                 </div>
               </div>
@@ -274,13 +312,13 @@ export default function App() {
             <PanelHeading
               title="议会结果"
               subtitle="MODERATOR OUTPUT"
-              badge={rehearsalId ? 'R-24-071' : 'FIXTURE'}
+              badge={rehearsalId ? rehearsalId.slice(-8) : 'A2MCP'}
             />
             <div className="panel-scroll result-scroll">
               <CouncilResults
                 phase={phase}
                 rehearsalId={rehearsalId}
-                result={COUNCIL_FIXTURE}
+                result={council}
                 selectedDecision={selectedDecision}
                 onDecision={setSelectedDecision}
               />
