@@ -1,0 +1,52 @@
+{
+  "$comment": "Valid holographic command room scene for phishing rehearsal",
+  "valid": true,
+  "data": {
+    "schemaVersion": "1.0.0",
+    "agentStates": [
+      {
+        "id": "procedure-analyst",
+        "confidence": 0.92,
+        "status": "complete"
+      },
+      {
+        "id": "risk-challenger",
+        "confidence": 0.88,
+        "status": "complete"
+      },
+      {
+        "id": "evidence-auditor",
+        "confidence": 0.85,
+        "status": "complete"
+      }
+    ],
+    "evidenceNodes": [
+      {
+        "id": "ev-1",
+        "ref": "step-5",
+        "label": "独立渠道核验要求"
+      },
+      {
+        "id": "ev-2",
+        "ref": "step-2",
+        "label": "禁止点击链接"
+      }
+    ],
+    "riskPaths": [
+      {
+        "id": "rp-1",
+        "from": "link-click",
+        "to": "credential-leak",
+        "severity": "critical"
+      }
+    ],
+    "decisionNodes": [
+      {
+        "id": "link-click",
+        "label": "链接点击决策"
+      }
+    ],
+    "cameraCues": ["agent-arrival", "consensus-reveal", "decision-focus"],
+    "paletteToken": "caution"
+  }
+}

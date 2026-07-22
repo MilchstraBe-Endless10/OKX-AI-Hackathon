@@ -1,0 +1,11 @@
+{
+  "$comment": "Malformed council result — empty consensus and invalid confidence",
+  "valid": false,
+  "data": {
+    "consensus": [],
+    "disagreements": [],
+    "evidenceGaps": [],
+    "recommendedPath": [],
+    "decisionNodes": []
+  }
+}

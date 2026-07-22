@@ -1,0 +1,10 @@
+{
+  "$comment": "Stale version conflict — another writer already incremented",
+  "valid": false,
+  "data": {
+    "nodeId": "link-click",
+    "choiceId": "verify",
+    "expectedVersion": 3
+  },
+  "expectedError": "VERSION_CONFLICT"
+}

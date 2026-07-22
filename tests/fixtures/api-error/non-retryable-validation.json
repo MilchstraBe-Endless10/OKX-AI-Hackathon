@@ -1,0 +1,10 @@
+{
+  "$comment": "Non-retryable validation error",
+  "valid": true,
+  "data": {
+    "code": "VALIDATION_ERROR",
+    "message": "SOP 内容超过 60,000 UTF-8 字节限制",
+    "retryable": false,
+    "requestId": "req_f6e5d4c3b2a1"
+  }
+}

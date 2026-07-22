@@ -1,0 +1,9 @@
+pnpm-lock.yaml
+node_modules/
+dist/
+.omx/
+.hunk/
+ponytail/
+.github/
+# Pre-existing team docs have their own formatting; avoid CJK reflow noise
+*.md

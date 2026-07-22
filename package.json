@@ -1,0 +1,32 @@
+{
+  "name": "sopscape-council",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SOPscape Council — static SOP into decision-ready, verifiable AI rehearsal",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@11.15.1",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml}\"",
+    "typecheck": "pnpm -r --parallel run typecheck",
+    "lint": "eslint . --ext .ts,.tsx",
+    "test:unit": "vitest run tests/unit",
+    "test:fixtures": "vitest run tests/unit/fixtures.test.ts",
+    "test": "pnpm test:unit && pnpm test:fixtures",
+    "build": "pnpm -r --filter './packages/**' --filter './apps/server' run build",
+    "verify": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^2.1.8"
+  }
+}
