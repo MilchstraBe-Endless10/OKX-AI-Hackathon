@@ -8,6 +8,7 @@ describe('SopInput', () => {
     expect(screen.getByTestId('sop-title')).toBeInTheDocument();
     expect(screen.getByTestId('sop-content')).toBeInTheDocument();
     expect(screen.getByTestId('submit-sop')).toBeInTheDocument();
+    expect(screen.getByText('启动议会演练')).toBeInTheDocument();
   });
 
   test('submit button is disabled when fields are empty', () => {
@@ -38,6 +39,6 @@ describe('SopInput', () => {
 
   test('shows byte counter', () => {
     render(<SopInput onSubmit={() => {}} />);
-    expect(screen.getByText(/0 \/ 60,000 bytes/)).toBeInTheDocument();
+    expect(screen.getByText(/0 \/ 60,000 字节/)).toBeInTheDocument();
   });
 });

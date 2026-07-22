@@ -2,13 +2,15 @@ import { useRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
 import type { Scene } from '@sopscape/contracts';
 import type { UIPhase } from '../lib/api';
-import { getDecisionVisual, getQualityProfile } from './render-loop';
+import { getDecisionVisual, getNextOrbit, getQualityProfile } from './render-loop';
 
 interface CommandRoomProps {
   phase: UIPhase;
   scene: Scene;
   decisionChoice: string | null;
   view: 'consensus' | 'risk' | 'evidence';
+  orbitLabel?: string;
+  resetLabel?: string;
 }
 
 export default function CommandRoom({
@@ -16,6 +18,8 @@ export default function CommandRoom({
   scene: sceneData,
   decisionChoice,
   view,
+  orbitLabel = '按住鼠标中键拖动 · 360° 环视',
+  resetLabel = '复位视角',
 }: CommandRoomProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -23,6 +27,7 @@ export default function CommandRoom({
   const phaseRef = useRef(phase);
   const decisionRef = useRef(decisionChoice);
   const viewRef = useRef(view);
+  const resetCameraRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     phaseRef.current = phase;
@@ -56,7 +61,7 @@ export default function CommandRoom({
     const initialHeight = Math.max(initialBounds.height, 1);
     renderer.setPixelRatio(quality.dpr);
     renderer.setSize(initialWidth, initialHeight, false);
-    renderer.setClearColor(0x060811, 1);
+    renderer.setClearColor(0x000000, 0);
     rendererRef.current = renderer;
 
     mount.appendChild(renderer.domElement);
@@ -65,8 +70,25 @@ export default function CommandRoom({
     sceneRef.current = threeScene;
 
     const camera = new THREE.PerspectiveCamera(60, initialWidth / initialHeight, 0.1, 1000);
-    camera.position.set(0, 2.1, 7);
-    camera.lookAt(0, 1.1, 0);
+    const cameraTarget = new THREE.Vector3(0, 1.1, 0);
+    const initialOrbit = { yaw: 0, pitch: 0.14 };
+    const orbit = { ...initialOrbit };
+    const cameraRadius = 7.1;
+    const updateCamera = () => {
+      const horizontalRadius = cameraRadius * Math.cos(orbit.pitch);
+      camera.position.set(
+        cameraTarget.x + horizontalRadius * Math.sin(orbit.yaw),
+        cameraTarget.y + cameraRadius * Math.sin(orbit.pitch),
+        cameraTarget.z + horizontalRadius * Math.cos(orbit.yaw),
+      );
+      camera.lookAt(cameraTarget);
+    };
+    updateCamera();
+    resetCameraRef.current = () => {
+      orbit.yaw = initialOrbit.yaw;
+      orbit.pitch = initialOrbit.pitch;
+      updateCamera();
+    };
 
     // Lighting: one directional + ambient (budget: 2 lights)
     const ambient = new THREE.AmbientLight(0x58658f, 0.65);
@@ -222,6 +244,47 @@ export default function CommandRoom({
     const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(mount);
 
+    // Desktop orbit: middle-button drag rotates the camera around the council core.
+    let orbiting = false;
+    let lastPointer = { x: 0, y: 0 };
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button !== 1) return;
+      event.preventDefault();
+      orbiting = true;
+      lastPointer = { x: event.clientX, y: event.clientY };
+      renderer.domElement.setPointerCapture(event.pointerId);
+      renderer.domElement.classList.add('is-orbiting');
+    };
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!orbiting) return;
+      event.preventDefault();
+      const next = getNextOrbit(
+        orbit,
+        event.clientX - lastPointer.x,
+        event.clientY - lastPointer.y,
+      );
+      orbit.yaw = next.yaw;
+      orbit.pitch = next.pitch;
+      lastPointer = { x: event.clientX, y: event.clientY };
+      updateCamera();
+    };
+    const stopOrbit = (event: PointerEvent) => {
+      if (!orbiting) return;
+      orbiting = false;
+      renderer.domElement.classList.remove('is-orbiting');
+      if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+        renderer.domElement.releasePointerCapture(event.pointerId);
+      }
+    };
+    const preventMiddleClick = (event: MouseEvent) => {
+      if (event.button === 1) event.preventDefault();
+    };
+    renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+    renderer.domElement.addEventListener('pointermove', handlePointerMove);
+    renderer.domElement.addEventListener('pointerup', stopOrbit);
+    renderer.domElement.addEventListener('pointercancel', stopOrbit);
+    renderer.domElement.addEventListener('auxclick', preventMiddleClick);
+
     // Visibility API — pause when hidden
     const handleVisibility = () => {
       if (document.hidden) {
@@ -235,6 +298,12 @@ export default function CommandRoom({
     return () => {
       resizeObserver.disconnect();
       document.removeEventListener('visibilitychange', handleVisibility);
+      renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
+      renderer.domElement.removeEventListener('pointermove', handlePointerMove);
+      renderer.domElement.removeEventListener('pointerup', stopOrbit);
+      renderer.domElement.removeEventListener('pointercancel', stopOrbit);
+      renderer.domElement.removeEventListener('auxclick', preventMiddleClick);
+      resetCameraRef.current = null;
       renderer.setAnimationLoop(null);
       renderer.dispose();
       expertGeo.dispose();
@@ -253,5 +322,15 @@ export default function CommandRoom({
     };
   }, [sceneData]);
 
-  return <div ref={handleMount} className="w-full h-full" style={{ zIndex: 0 }} />;
+  return (
+    <div className="command-room-viewport">
+      <div ref={handleMount} className="command-room-canvas" />
+      <div className="orbit-controls" aria-label={orbitLabel}>
+        <span>{orbitLabel}</span>
+        <button type="button" onClick={() => resetCameraRef.current?.()}>
+          {resetLabel}
+        </button>
+      </div>
+    </div>
+  );
 }
