@@ -1,0 +1,13 @@
+{
+  "$comment": "Valid phishing-email SOP input for the competition scenario",
+  "valid": true,
+  "data": {
+    "title": "收到疑似钓鱼邮件后的处置 SOP",
+    "content": "1. 收到疑似钓鱼邮件时，首先保持冷静，不要恐慌。\n2. 绝对不要点击邮件中的任何链接，尤其是密码重置、验证身份或紧急通知类链接。\n3. 不要下载或打开附件。\n4. 不要回复该邮件或按邮件中的电话号码致电。\n5. 通过独立渠道（如官方 App、官网、已知客服电话）核验发件人身份。\n6. 将邮件转发给安全团队或 IT 部门的专用举报邮箱。\n7. 如果已误点击链接，立即断开网络连接，修改相关密码，并通知安全团队。\n8. 删除邮件或将其隔离作为证据，等待安全团队指示。",
+    "locale": "zh-CN",
+    "scenarioMetadata": {
+      "domain": "phishing",
+      "urgency": "high"
+    }
+  }
+}

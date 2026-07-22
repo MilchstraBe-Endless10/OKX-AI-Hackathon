@@ -1,0 +1,16 @@
+{
+  "$comment": "Decision result after selecting safe verification path",
+  "valid": true,
+  "data": {
+    "version": 4,
+    "confidence": 0.95,
+    "topology": {
+      "updatedNodes": ["ev-1"],
+      "removedPaths": ["rp-1"]
+    },
+    "consequence": {
+      "summary": "用户选择了安全核验路径，风险已消除",
+      "nextAction": "继续向安全团队上报并记录事件"
+    }
+  }
+}

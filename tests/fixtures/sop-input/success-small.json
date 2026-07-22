@@ -1,0 +1,8 @@
+{
+  "$comment": "Minimal valid SOP input",
+  "valid": true,
+  "data": {
+    "title": "最小 SOP",
+    "content": "步骤一：确认安全。步骤二：上报。"
+  }
+}

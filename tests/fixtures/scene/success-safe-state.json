@@ -1,0 +1,40 @@
+{
+  "$comment": "Scene state after user selects safe verification path",
+  "valid": true,
+  "data": {
+    "schemaVersion": "1.0.0",
+    "agentStates": [
+      {
+        "id": "procedure-analyst",
+        "confidence": 0.95,
+        "status": "complete"
+      },
+      {
+        "id": "risk-challenger",
+        "confidence": 0.93,
+        "status": "complete"
+      },
+      {
+        "id": "evidence-auditor",
+        "confidence": 0.9,
+        "status": "complete"
+      }
+    ],
+    "evidenceNodes": [
+      {
+        "id": "ev-1",
+        "ref": "step-5",
+        "label": "独立渠道核验已确认"
+      }
+    ],
+    "riskPaths": [],
+    "decisionNodes": [
+      {
+        "id": "link-click",
+        "label": "链接点击决策（已解决）"
+      }
+    ],
+    "cameraCues": ["consequence-pan", "palette-shift"],
+    "paletteToken": "safe"
+  }
+}

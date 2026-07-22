@@ -1,0 +1,57 @@
+{
+  "$comment": "Council result with disagreements and evidence gaps",
+  "valid": true,
+  "data": {
+    "consensus": [
+      {
+        "role": "procedure-analyst",
+        "claim": "应保留邮件作为证据",
+        "evidenceRefs": ["step-8"],
+        "confidence": 0.8,
+        "severity": "low",
+        "affectedStepIds": ["step-8"],
+        "unsupported": false
+      }
+    ],
+    "disagreements": [
+      {
+        "topic": "是否立即删除邮件",
+        "positions": [
+          {
+            "role": "procedure-analyst",
+            "stance": "保留作为证据"
+          },
+          {
+            "role": "risk-challenger",
+            "stance": "立即隔离以防止误操作"
+          }
+        ]
+      }
+    ],
+    "evidenceGaps": [
+      {
+        "description": "SOP 未明确发件人域名历史记录的检查方式",
+        "refs": ["sender-domain"]
+      }
+    ],
+    "recommendedPath": ["isolate-email", "report-to-security"],
+    "decisionNodes": [
+      {
+        "id": "email-handling",
+        "prompt": "如何处理这封可疑邮件？",
+        "options": [
+          {
+            "id": "isolate",
+            "label": "立即隔离",
+            "consequence": "contained"
+          },
+          {
+            "id": "keep",
+            "label": "保留在收件箱作为证据",
+            "consequence": "accidental-risk"
+          }
+        ]
+      }
+    ]
+  }
+}

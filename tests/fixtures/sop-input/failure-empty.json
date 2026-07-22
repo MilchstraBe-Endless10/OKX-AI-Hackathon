@@ -1,0 +1,8 @@
+{
+  "$comment": "Empty title and content — should be rejected",
+  "valid": false,
+  "data": {
+    "title": "",
+    "content": ""
+  }
+}

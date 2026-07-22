@@ -1,0 +1,11 @@
+{
+  "$comment": "Malformed council result — empty consensus violates .min(1) on consensus array",
+  "valid": false,
+  "data": {
+    "consensus": [],
+    "disagreements": [],
+    "evidenceGaps": [],
+    "recommendedPath": [],
+    "decisionNodes": []
+  }
+}

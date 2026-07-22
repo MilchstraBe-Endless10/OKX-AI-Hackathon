@@ -1,0 +1,19 @@
+{
+  "$comment": "Invalid scene — unknown camera cue (prompt-injection attempt)",
+  "valid": false,
+  "data": {
+    "schemaVersion": "1.0.0",
+    "agentStates": [
+      {
+        "id": "procedure-analyst",
+        "confidence": 0.9,
+        "status": "complete"
+      }
+    ],
+    "evidenceNodes": [],
+    "riskPaths": [],
+    "decisionNodes": [],
+    "cameraCues": ["execute-arbitrary-javascript"],
+    "paletteToken": "neutral"
+  }
+}
