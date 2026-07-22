@@ -7,6 +7,15 @@ import { startGeneration } from '@sopscape/core';
 
 const A2MCP_DEADLINE_MS = 58_000;
 
+function deadline(ms: number, signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('DEADLINE_EXCEEDED'));
+    }, ms);
+    signal.addEventListener('abort', () => clearTimeout(timeout), { once: true });
+  });
+}
+
 export function buildApp(): FastifyInstance {
   const app = Fastify({ logger: true });
 
@@ -20,14 +29,8 @@ export function buildApp(): FastifyInstance {
   });
 
   app.post('/a2mcp/generate-rehearsal', async (request, reply) => {
-    // Validate input against SopInputSchema
-    const body = request.body as Record<string, unknown>;
-    const parsed = SopInputSchema.safeParse({
-      title: body.title,
-      content: body.content,
-      locale: body.locale,
-      scenarioMetadata: body.scenarioMetadata,
-    });
+    // Validate input directly from request.body
+    const parsed = SopInputSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
         code: 'VALIDATION_ERROR',
@@ -37,14 +40,15 @@ export function buildApp(): FastifyInstance {
       });
     }
 
-    // Enforce 58s deadline with AbortSignal
+    // Enforce 58s deadline with Promise.race
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), A2MCP_DEADLINE_MS);
     const signal = controller.signal;
 
     try {
-      // Start generation (uses FakeProvider in this vertical slice)
-      const result = await startGeneration(parsed.data, { signal });
+      const result = await Promise.race([
+        startGeneration(parsed.data, { signal }),
+        deadline(A2MCP_DEADLINE_MS, signal),
+      ]);
 
       if (result.status === 'CANCELLED') {
         return reply.code(499).send({
@@ -64,7 +68,7 @@ export function buildApp(): FastifyInstance {
         });
       }
 
-      // Validate council result — use parsed data, not result.council!
+      // Validate council result — use parsed data
       const councilValid = CouncilResultSchema.safeParse(result.council);
       if (!councilValid.success) {
         return reply.code(500).send({
@@ -75,7 +79,7 @@ export function buildApp(): FastifyInstance {
         });
       }
 
-      // Return A2MCP success projection — use validated data
+      // Return A2MCP success projection
       const council = councilValid.data;
       return reply.code(200).send({
         rehearsalId: result.rehearsalId,
@@ -86,8 +90,24 @@ export function buildApp(): FastifyInstance {
         recommendedPath: council.recommendedPath,
         decisionNodes: council.decisionNodes,
       });
-    } finally {
-      clearTimeout(timeout);
+    } catch (error) {
+      // Deadline exceeded → HTTP 504
+      if (error instanceof Error && error.message === 'DEADLINE_EXCEEDED') {
+        controller.abort(); // Ensure Core is aborted
+        return reply.code(504).send({
+          code: 'DEADLINE_EXCEEDED',
+          message: 'Generation exceeded 58s deadline',
+          retryable: false,
+          requestId: crypto.randomUUID(),
+        });
+      }
+      // Other errors → HTTP 500
+      return reply.code(500).send({
+        code: 'INTERNAL_ERROR',
+        message: 'Unexpected error',
+        retryable: true,
+        requestId: crypto.randomUUID(),
+      });
     }
   });
 

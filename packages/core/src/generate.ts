@@ -143,6 +143,93 @@ export class FakeProvider {
   }
 }
 
+/**
+ * SlowFakeProvider — test-only variant that delays execution for deadline testing.
+ */
+export class SlowFakeProvider extends FakeProvider {
+  private delayMs: number;
+
+  constructor(delayMs: number = 100) {
+    super();
+    this.delayMs = delayMs;
+  }
+
+  override async run(
+    input: { title: string; content: string; locale?: string },
+    options?: GenerationOptions,
+  ): Promise<GenerationResult> {
+    const { progressSink, signal } = options ?? {};
+
+    // Check abort before starting
+    if (signal?.aborted) {
+      return { rehearsalId: genId(), status: 'CANCELLED', error: 'ABORTED' };
+    }
+
+    // Validate input at schema level
+    const parsed = SopInputSchema.safeParse(input);
+    if (!parsed.success) {
+      return { rehearsalId: genId(), status: 'FAILED', error: 'VALIDATION_ERROR' };
+    }
+
+    const rehearsalId = genId();
+
+    // QUEUED
+    emit(progressSink, 'QUEUED');
+
+    // SPECIALISTS_RUNNING — 3 parallel (with delay)
+    emit(progressSink, 'SPECIALISTS_RUNNING');
+
+    // Artificial delay to test deadline
+    await new Promise((resolve) => setTimeout(resolve, this.delayMs));
+
+    // Check abort after delay
+    if (signal?.aborted) {
+      return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
+    }
+
+    // Rest of the flow is the same as FakeProvider
+    const roles = ['procedure-analyst', 'risk-challenger', 'evidence-auditor'] as const;
+
+    const specialists = roles.map((role) => ({
+      role,
+      finding: makeFixtureFinding(role, input.title),
+    }));
+
+    // MODERATING
+    emit(progressSink, 'MODERATING');
+
+    const council: CouncilResult = {
+      consensus: specialists.map((s) => s.finding),
+      disagreements: [],
+      evidenceGaps: [],
+      recommendedPath: ['verify', 'report'],
+      decisionNodes: [
+        {
+          id: 'action',
+          prompt: '如何处理此 SOP？',
+          options: [
+            { id: 'execute', label: '执行', consequence: 'done' },
+            { id: 'review', label: '复核后执行', consequence: 'verified' },
+          ],
+        },
+      ],
+    };
+
+    const councilParsed = CouncilResultSchema.safeParse(council);
+    if (!councilParsed.success) {
+      return { rehearsalId, status: 'FAILED', error: 'COUNCIL_VALIDATION_FAILED' };
+    }
+
+    // PERSISTING
+    emit(progressSink, 'PERSISTING');
+
+    // READY
+    emit(progressSink, 'READY');
+
+    return { rehearsalId, status: 'READY', council };
+  }
+}
+
 function emit(
   sink: ((e: { phase: LifecycleState }) => void) | undefined,
   phase: LifecycleState,

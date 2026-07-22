@@ -12,6 +12,7 @@ export { AttemptBudget } from './attempt-budget.js';
 export {
   startGeneration,
   FakeProvider,
+  SlowFakeProvider,
   type GenerationResult,
   type GenerationOptions,
   type GenerationProgress,

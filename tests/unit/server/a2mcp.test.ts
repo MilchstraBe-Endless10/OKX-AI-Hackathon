@@ -28,6 +28,53 @@ describe('POST /a2mcp/generate-rehearsal', () => {
     expect(body.consensus).toBeDefined();
   });
 
+  it('returns 400 on null body', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/a2mcp/generate-rehearsal',
+      payload: null,
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns 415 on string body (Fastify content-type parsing)', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/a2mcp/generate-rehearsal',
+      payload: 'invalid string',
+    });
+    // Fastify rejects non-JSON payloads with 415 Unsupported Media Type
+    expect(response.statusCode).toBe(415);
+  });
+
+  it('returns 400 on array body (Zod strict validation)', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/a2mcp/generate-rehearsal',
+      payload: [{ title: 'test', content: 'content' }],
+    });
+    // Zod .strict() rejects unexpected object shapes
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('returns 400 on unknown fields (Zod strict validation)', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/a2mcp/generate-rehearsal',
+      payload: {
+        title: 'test',
+        content: 'content',
+        unknownField: 'should be rejected',
+      },
+    });
+    // Zod .strict() rejects unknown fields
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.code).toBe('VALIDATION_ERROR');
+  });
+
   it('returns 400 on validation failure (empty content)', async () => {
     const response = await app.inject({
       method: 'POST',
