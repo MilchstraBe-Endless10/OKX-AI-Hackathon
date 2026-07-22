@@ -1,5 +1,6 @@
-import { expect, test, describe } from 'vitest';
-import { statusToPhase, PHASE_ORDER } from './api';
+import { expect, test, describe, vi } from 'vitest';
+import { councilToScene, generateRehearsal, statusToPhase, PHASE_ORDER } from './api';
+import { COUNCIL_FIXTURE } from './fixtures';
 
 describe('statusToPhase', () => {
   test('maps each valid server status to a UI phase', () => {
@@ -36,5 +37,51 @@ describe('PHASE_ORDER', () => {
     expect(PHASE_ORDER).not.toContain('FAILED');
     expect(PHASE_ORDER).not.toContain('CANCELLED');
     expect(PHASE_ORDER).not.toContain('EXPIRED');
+  });
+});
+
+describe('A2MCP adapter', () => {
+  test('validates the response and projects it into the shared Scene contract', async () => {
+    const request = vi.fn(async () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            rehearsalId: 'r-live-1',
+            status: 'READY',
+            ...COUNCIL_FIXTURE,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+
+    const response = await generateRehearsal(
+      { title: '钓鱼邮件处置', content: '不点击链接并上报', locale: 'zh-CN' },
+      request as typeof fetch,
+    );
+    const scene = councilToScene(response.council);
+
+    expect(request).toHaveBeenCalledWith('/a2mcp/generate-rehearsal', expect.any(Object));
+    expect(response.rehearsalId).toBe('r-live-1');
+    expect(scene.agentStates).toHaveLength(COUNCIL_FIXTURE.consensus.length);
+    expect(scene.decisionNodes[0]?.id).toBe(COUNCIL_FIXTURE.decisionNodes[0]?.id);
+  });
+
+  test('rejects a success-shaped response that violates CouncilResult', async () => {
+    const request = vi.fn(async () =>
+      Promise.resolve(
+        new Response(JSON.stringify({ rehearsalId: 'r-bad', status: 'READY', consensus: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+
+    await expect(
+      generateRehearsal(
+        { title: 'test', content: 'content', locale: 'zh-CN' },
+        request as typeof fetch,
+      ),
+    ).rejects.toThrow('Invalid A2MCP response');
   });
 });
