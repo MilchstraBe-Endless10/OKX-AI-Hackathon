@@ -889,3 +889,136 @@ textarea:focus-visible,
   color: #061117;
   background: var(--cyan);
 }
+
+.command-room-viewport,
+.command-room-canvas {
+  position: absolute;
+  inset: 0;
+}
+.command-room-canvas canvas {
+  cursor: grab;
+}
+.command-room-canvas canvas.is-orbiting {
+  cursor: grabbing;
+}
+.orbit-controls {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(8, 13, 24, 0.78);
+  backdrop-filter: blur(10px);
+  transform: translateX(-50%);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.orbit-controls button {
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid rgba(96, 233, 255, 0.28);
+  border-radius: 999px;
+  color: var(--cyan);
+  background: rgba(96, 233, 255, 0.08);
+  cursor: pointer;
+}
+@media (max-width: 768px) {
+  .orbit-controls span {
+    display: none;
+  }
+}
+
+.preference-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.preference-controls label {
+  position: relative;
+}
+.preference-controls label > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.preference-controls select {
+  width: 104px;
+  min-height: 38px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  color: var(--text);
+  background: var(--panel-strong);
+  cursor: pointer;
+  font-size: 11px;
+}
+.preference-controls select:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+:root[data-theme='light'] {
+  --bg: #eef4f8;
+  --panel: rgba(255, 255, 255, 0.82);
+  --panel-strong: rgba(247, 250, 253, 0.96);
+  --line: rgba(32, 64, 91, 0.16);
+  --line-strong: rgba(32, 64, 91, 0.28);
+  --text: #102234;
+  --muted: #52677d;
+  --muted-2: #6c8196;
+  --shadow: 0 22px 64px rgba(34, 67, 91, 0.14);
+}
+:root[data-theme='light'] body {
+  background:
+    radial-gradient(circle at 52% 34%, rgba(102, 95, 220, 0.1), transparent 34%),
+    radial-gradient(circle at 18% 88%, rgba(36, 171, 201, 0.1), transparent 28%), var(--bg);
+}
+:root[data-theme='light'] .app-rail,
+:root[data-theme='light'] .topbar,
+:root[data-theme='light'] .glass-panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(239, 246, 250, 0.82));
+}
+:root[data-theme='light'] .scene-stage {
+  background: radial-gradient(circle at 50% 56%, rgba(0, 151, 177, 0.12), transparent 32%);
+}
+:root[data-theme='light'] .sop-brief,
+:root[data-theme='light'] .expert-card,
+:root[data-theme='light'] .scene-seat,
+:root[data-theme='light'] .orbit-controls,
+:root[data-theme='light'] .result-scroll > div,
+:root[data-theme='light'] .input-scroll > form {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.84);
+}
+:root[data-theme='light'] .input-scroll input,
+:root[data-theme='light'] .input-scroll textarea,
+:root[data-theme='light'] .result-scroll button {
+  color: var(--text);
+  background: rgba(226, 237, 244, 0.82);
+}
+:root[data-theme='light'] .text-slate-100,
+:root[data-theme='light'] .text-slate-200,
+:root[data-theme='light'] .text-slate-300 {
+  color: var(--text) !important;
+}
+:root[data-theme='light'] .text-slate-400,
+:root[data-theme='light'] .text-slate-500 {
+  color: var(--muted) !important;
+}
+:root[data-theme='light'] .brand-mark::after {
+  background: #f7fbfd;
+}
+
+@media (max-width: 1180px) {
+  .preference-controls select {
+    width: 84px;
+  }
+}

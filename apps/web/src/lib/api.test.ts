@@ -84,4 +84,22 @@ describe('A2MCP adapter', () => {
       ),
     ).rejects.toThrow('Invalid A2MCP response');
   });
+
+  test('preserves the server error message for an actionable failure state', async () => {
+    const request = vi.fn(async () =>
+      Promise.resolve(
+        new Response(JSON.stringify({ message: '模型服务暂时不可用' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+
+    await expect(
+      generateRehearsal(
+        { title: 'test', content: 'content', locale: 'zh-CN' },
+        request as typeof fetch,
+      ),
+    ).rejects.toThrow('模型服务暂时不可用');
+  });
 });

@@ -6,6 +6,14 @@ import ProgressPanel from './components/ProgressPanel';
 import CouncilResults from './components/CouncilResults';
 import { councilToScene, generateRehearsal, type GenerationPhase, type UIPhase } from './lib/api';
 import type { CouncilResult, Scene, SopInput as SopInputValue } from '@sopscape/contracts';
+import {
+  LOCALES,
+  getInitialLocale,
+  getMessages,
+  resolveTheme,
+  type LocaleCode,
+  type ThemeMode,
+} from './lib/preferences';
 
 const EMPTY_SCENE: Scene = {
   schemaVersion: '1.0.0',
@@ -40,7 +48,20 @@ const EXPERT_COPY = {
 
 type SceneView = 'consensus' | 'risk' | 'evidence';
 
+function savedTheme(): ThemeMode {
+  const value = localStorage.getItem('sopscape-theme');
+  return value === 'light' || value === 'dark' || value === 'system' ? value : 'system';
+}
+
+function savedLocale(): LocaleCode {
+  const value = localStorage.getItem('sopscape-locale');
+  return LOCALES.some(({ code }) => code === value) ? (value as LocaleCode) : getInitialLocale();
+}
+
 export default function App() {
+  const [themeMode, setThemeMode] = useState<ThemeMode>(savedTheme);
+  const [locale, setLocale] = useState<LocaleCode>(savedLocale);
+  const messages = getMessages(locale);
   const [phase, setPhase] = useState<UIPhase>('idle');
   const [rehearsalId, setRehearsalId] = useState<string | null>(null);
   const [council, setCouncil] = useState<CouncilResult | null>(null);
@@ -48,7 +69,28 @@ export default function App() {
   const [submittedSop, setSubmittedSop] = useState<SopInputValue | null>(null);
   const [selectedDecision, setSelectedDecision] = useState<string | null>(null);
   const [sceneView, setSceneView] = useState<SceneView>('consensus');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const shellRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      document.documentElement.dataset.theme = resolveTheme(themeMode, media.matches);
+      document.documentElement.style.colorScheme =
+        resolveTheme(themeMode, media.matches) === 'dark' ? 'dark' : 'light';
+    };
+    applyTheme();
+    localStorage.setItem('sopscape-theme', themeMode);
+    media.addEventListener?.('change', applyTheme);
+    return () => media.removeEventListener?.('change', applyTheme);
+  }, [themeMode]);
+
+  useEffect(() => {
+    const config = LOCALES.find(({ code }) => code === locale) ?? LOCALES[0];
+    document.documentElement.lang = locale;
+    document.documentElement.dir = config.dir;
+    localStorage.setItem('sopscape-locale', locale);
+  }, [locale]);
 
   useEffect(() => {
     if (!shellRef.current || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -83,6 +125,7 @@ export default function App() {
 
   async function startRehearsal(input: SopInputValue) {
     setSelectedDecision(null);
+    setErrorMessage(null);
     setSceneView('consensus');
     setRehearsalId(null);
     setCouncil(null);
@@ -95,13 +138,15 @@ export default function App() {
       setCouncil(response.council);
       setScene(councilToScene(response.council));
       setPhase('READY');
-    } catch {
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '未知错误，请稍后重试');
       setPhase('FAILED');
     }
   }
 
   function resetRehearsal() {
     setSelectedDecision(null);
+    setErrorMessage(null);
     setRehearsalId(null);
     setCouncil(null);
     setScene(EMPTY_SCENE);
@@ -111,15 +156,15 @@ export default function App() {
 
   return (
     <div ref={shellRef} className="app-shell">
-      <div className="app-rail" role="navigation" aria-label="主导航">
+      <div className="app-rail" role="navigation" aria-label={messages.commandRoom}>
         <div className="brand-mark" aria-label="SOPscape Council" />
         <nav className="rail-nav">
           {[
-            ['⌂', '议会指挥室'],
-            ['▤', '演练记录'],
-            ['◎', '证据档案'],
-            ['‹/›', '协议接口'],
-            ['◇', '安全与权限'],
+            ['⌂', messages.commandRoom],
+            ['▤', messages.navHistory],
+            ['◎', messages.navEvidence],
+            ['‹/›', messages.navProtocol],
+            ['◇', messages.navSecurity],
           ].map(([icon, label], index) => (
             <button
               key={label}
@@ -143,39 +188,71 @@ export default function App() {
             <span className="live-dot" />
             <span>
               {phase === 'idle'
-                ? '等待 SOP 输入'
+                ? messages.waitingInput
                 : phase === 'READY'
-                  ? '议会结果已生成'
+                  ? messages.resultReady
                   : phase === 'FAILED'
-                    ? 'A2MCP 调用失败'
-                    : '三专家正在审议'}
+                    ? messages.callFailed
+                    : messages.running}
             </span>
             <div className="phase-track">
               <i style={{ width: `${progress}%` }} />
             </div>
             <span>{progress}%</span>
           </div>
+          <div className="preference-controls">
+            <label>
+              <span>{messages.theme}</span>
+              <select
+                aria-label={messages.theme}
+                value={themeMode}
+                onChange={(event) => setThemeMode(event.target.value as ThemeMode)}
+              >
+                <option value="system">{messages.system}</option>
+                <option value="light">{messages.light}</option>
+                <option value="dark">{messages.dark}</option>
+              </select>
+            </label>
+            <label>
+              <span>{messages.language}</span>
+              <select
+                aria-label={messages.language}
+                value={locale}
+                onChange={(event) => setLocale(event.target.value as LocaleCode)}
+              >
+                {LOCALES.map((item) => (
+                  <option key={item.code} value={item.code}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <button className="new-rehearsal" onClick={phase === 'idle' ? undefined : resetRehearsal}>
-            {phase === 'idle' ? 'A2MCP 在线' : '＋ 新建演练'}
+            {phase === 'idle' ? messages.online : `＋ ${messages.newRehearsal}`}
           </button>
         </header>
 
         <section className="command-grid">
           <aside className="glass-panel expert-panel" data-shell-panel>
-            <PanelHeading title="专家席位" subtitle="COUNCIL AGENTS" badge="3 / 3 VALID" />
+            <PanelHeading title={messages.experts} subtitle="COUNCIL AGENTS" badge="3 / 3 VALID" />
             {phase === 'idle' ? (
               <div className="panel-scroll input-scroll">
-                <SopInput onSubmit={startRehearsal} />
+                <SopInput onSubmit={startRehearsal} locale={locale} messages={messages} />
               </div>
             ) : (
               <div className="panel-scroll">
                 <article className="sop-brief">
-                  <span>当前 SOP · PHISHING RESPONSE</span>
+                  <span>{messages.currentSop} · PHISHING RESPONSE</span>
                   <strong>{submittedSop?.title}</strong>
                   <p>{submittedSop?.content}</p>
                   <div>
-                    <i>{council?.recommendedPath.length ?? 0} 个推荐步骤</i>
-                    <i>{council?.decisionNodes.length ?? 0} 个决策节点</i>
+                    <i>
+                      {council?.recommendedPath.length ?? 0} {messages.recommendedSteps}
+                    </i>
+                    <i>
+                      {council?.decisionNodes.length ?? 0} {messages.decisionNodes}
+                    </i>
                     <i>{submittedSop?.locale ?? 'zh-CN'}</i>
                   </div>
                 </article>
@@ -187,12 +264,18 @@ export default function App() {
                     const copy = EXPERT_COPY[agent.id as keyof typeof EXPERT_COPY];
                     if (!copy) return null;
                     const score = Math.round(agent.confidence * 100);
+                    const localizedName =
+                      agent.id === 'procedure-analyst'
+                        ? messages.procedureSeat
+                        : agent.id === 'risk-challenger'
+                          ? messages.riskSeat
+                          : messages.evidenceSeat;
                     return (
                       <article key={agent.id} className={`expert-card expert-${copy.color}`}>
                         <div className="expert-card-head">
-                          <span className="expert-symbol">{copy.name.slice(0, 1)}</span>
+                          <span className="expert-symbol">{localizedName.slice(0, 1)}</span>
                           <div>
-                            <strong>{copy.name}</strong>
+                            <strong>{localizedName}</strong>
                             <small>{copy.label}</small>
                           </div>
                           <b>{score}%</b>
@@ -212,7 +295,7 @@ export default function App() {
             )}
             <footer className="panel-footer">
               <span>SceneDocument v1.0</span>
-              <b>Schema 已通过</b>
+              <b>{messages.schemaPassed}</b>
             </footer>
           </aside>
 
@@ -222,8 +305,10 @@ export default function App() {
           >
             <div className="scene-head">
               <div>
-                <strong>议会指挥室</strong>
-                <span>{selectedDecision ? '决策已改变风险拓扑' : '共识已建立 · 等待用户决策'}</span>
+                <strong>{messages.commandRoom}</strong>
+                <span>
+                  {selectedDecision ? messages.changedTopology : messages.waitingDecision}
+                </span>
               </div>
               <div className="scene-tabs" role="tablist" aria-label="场景视图">
                 {(['consensus', 'risk', 'evidence'] as const).map((view) => (
@@ -234,7 +319,13 @@ export default function App() {
                     role="tab"
                     aria-selected={sceneView === view}
                   >
-                    {{ consensus: '共识', risk: '风险', evidence: '证据' }[view]}
+                    {
+                      {
+                        consensus: messages.consensus,
+                        risk: messages.risk,
+                        evidence: messages.evidence,
+                      }[view]
+                    }
                   </button>
                 ))}
               </div>
@@ -247,28 +338,33 @@ export default function App() {
                   decisionState === 'risk' ? 'click' : decisionState === 'safe' ? 'verify' : null
                 }
                 view={sceneView}
+                orbitLabel={messages.orbit}
+                resetLabel={messages.reset}
               />
               <article className="scene-seat seat-procedure">
-                <b>● 流程席位</b>
-                <span>{council?.recommendedPath.join(' → ') || '等待 A2MCP 分析'}</span>
+                <b>● {messages.procedureSeat}</b>
+                <span>{council?.recommendedPath.join(' → ') || messages.waitingAnalysis}</span>
               </article>
               <article className="scene-seat seat-risk">
-                <b>● 风险席位</b>
-                <span>{council?.disagreements.length ?? 0} 条分歧路径</span>
+                <b>● {messages.riskSeat}</b>
+                <span>
+                  {council?.disagreements.length ?? 0} {messages.disagreementPaths}
+                </span>
               </article>
               <article className="scene-seat seat-evidence">
-                <b>● 证据席位</b>
+                <b>● {messages.evidenceSeat}</b>
                 <span>
-                  {scene.evidenceNodes.length} 项证据 · {council?.evidenceGaps.length ?? 0} 项缺口
+                  {scene.evidenceNodes.length} {messages.evidenceItems} ·{' '}
+                  {council?.evidenceGaps.length ?? 0} {messages.gaps}
                 </span>
               </article>
               <div className="core-caption">
                 <strong>
                   {decisionState === 'risk'
-                    ? '风险链路激活'
+                    ? messages.riskActivated
                     : decisionState === 'safe'
-                      ? '安全处置路径'
-                      : '中央共识核心'}
+                      ? messages.safePath
+                      : messages.consensusCore}
                 </strong>
                 <span>
                   {decisionState === 'risk'
@@ -279,9 +375,9 @@ export default function App() {
                 </span>
               </div>
               <div className="scene-legend">
-                <span>● 共识</span>
-                <span>● 风险路径</span>
-                <span>● 证据缺口</span>
+                <span>● {messages.consensus}</span>
+                <span>● {messages.risk}</span>
+                <span>● {messages.evidence}</span>
               </div>
               <div className="scene-metrics">
                 <div>
@@ -292,17 +388,23 @@ export default function App() {
                         ? '42%'
                         : `${consensusScore}%`}
                   </b>
-                  <span>共识强度</span>
+                  <span>{messages.consensusStrength}</span>
                 </div>
                 <div>
-                  <b>{decisionState === 'safe' ? '低' : decisionState === 'risk' ? '高' : '中'}</b>
-                  <span>当前风险</span>
+                  <b>
+                    {decisionState === 'safe'
+                      ? messages.riskLow
+                      : decisionState === 'risk'
+                        ? messages.riskHigh
+                        : messages.riskMedium}
+                  </b>
+                  <span>{messages.currentRisk}</span>
                 </div>
                 <div>
                   <b>
                     {scene.evidenceNodes.length} / {evidenceTotal}
                   </b>
-                  <span>证据覆盖</span>
+                  <span>{messages.evidenceCoverage}</span>
                 </div>
               </div>
             </div>
@@ -310,7 +412,7 @@ export default function App() {
 
           <aside className="glass-panel result-panel" data-shell-panel>
             <PanelHeading
-              title="议会结果"
+              title={messages.resultPanel}
               subtitle="MODERATOR OUTPUT"
               badge={rehearsalId ? rehearsalId.slice(-8) : 'A2MCP'}
             />
@@ -319,6 +421,8 @@ export default function App() {
                 phase={phase}
                 rehearsalId={rehearsalId}
                 result={council}
+                errorMessage={errorMessage}
+                messages={messages}
                 selectedDecision={selectedDecision}
                 onDecision={setSelectedDecision}
               />
