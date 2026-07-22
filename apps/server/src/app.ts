@@ -5,6 +5,8 @@ import { startGeneration } from '@sopscape/core';
 // ponytail: A2MCP is the competition ingress — 58s absolute deadline interface, no payment.
 // All real orchestration happens in @sopscape/core; this route only maps transport.
 
+const A2MCP_DEADLINE_MS = 58_000;
+
 export function buildApp(): FastifyInstance {
   const app = Fastify({ logger: true });
 
@@ -35,48 +37,58 @@ export function buildApp(): FastifyInstance {
       });
     }
 
-    // Start generation (uses FakeProvider in this vertical slice)
-    const result = await startGeneration(parsed.data);
+    // Enforce 58s deadline with AbortSignal
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), A2MCP_DEADLINE_MS);
+    const signal = controller.signal;
 
-    if (result.status === 'CANCELLED') {
-      return reply.code(499).send({
-        code: 'CANCELLED',
-        message: 'Generation was cancelled',
-        retryable: false,
-        requestId: crypto.randomUUID(),
+    try {
+      // Start generation (uses FakeProvider in this vertical slice)
+      const result = await startGeneration(parsed.data, { signal });
+
+      if (result.status === 'CANCELLED') {
+        return reply.code(499).send({
+          code: 'CANCELLED',
+          message: 'Generation was cancelled',
+          retryable: false,
+          requestId: crypto.randomUUID(),
+        });
+      }
+
+      if (result.status === 'FAILED') {
+        return reply.code(500).send({
+          code: 'GENERATION_FAILED',
+          message: result.error ?? 'Unknown error',
+          retryable: true,
+          requestId: crypto.randomUUID(),
+        });
+      }
+
+      // Validate council result — use parsed data, not result.council!
+      const councilValid = CouncilResultSchema.safeParse(result.council);
+      if (!councilValid.success) {
+        return reply.code(500).send({
+          code: 'PROJECTION_ERROR',
+          message: 'Council result validation failed',
+          retryable: false,
+          requestId: crypto.randomUUID(),
+        });
+      }
+
+      // Return A2MCP success projection — use validated data
+      const council = councilValid.data;
+      return reply.code(200).send({
+        rehearsalId: result.rehearsalId,
+        status: result.status,
+        consensus: council.consensus,
+        disagreements: council.disagreements,
+        evidenceGaps: council.evidenceGaps,
+        recommendedPath: council.recommendedPath,
+        decisionNodes: council.decisionNodes,
       });
+    } finally {
+      clearTimeout(timeout);
     }
-
-    if (result.status === 'FAILED') {
-      return reply.code(500).send({
-        code: 'GENERATION_FAILED',
-        message: result.error ?? 'Unknown error',
-        retryable: true,
-        requestId: crypto.randomUUID(),
-      });
-    }
-
-    // Validate council result
-    const councilValid = CouncilResultSchema.safeParse(result.council);
-    if (!councilValid || !councilValid.success) {
-      return reply.code(500).send({
-        code: 'PROJECTION_ERROR',
-        message: 'Council result validation failed',
-        retryable: false,
-        requestId: crypto.randomUUID(),
-      });
-    }
-
-    // Return A2MCP success projection
-    return reply.code(200).send({
-      rehearsalId: result.rehearsalId,
-      status: result.status,
-      consensus: result.council!.consensus,
-      disagreements: result.council!.disagreements,
-      evidenceGaps: result.council!.evidenceGaps,
-      recommendedPath: result.council!.recommendedPath,
-      decisionNodes: result.council!.decisionNodes,
-    });
   });
 
   return app;

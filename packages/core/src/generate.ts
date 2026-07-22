@@ -67,23 +67,31 @@ export class FakeProvider {
     // SPECIALISTS_RUNNING — 3 parallel
     emit(progressSink, 'SPECIALISTS_RUNNING');
 
-    const specialists: Array<{
-      role: 'procedure-analyst' | 'risk-challenger' | 'evidence-auditor';
-      finding: Finding;
-    }> = [];
     const roles = ['procedure-analyst', 'risk-challenger', 'evidence-auditor'] as const;
 
-    for (const role of roles) {
-      try {
-        budget.startAttempt(role);
-        if (this.failRole === role) {
-          throw new Error('PROVIDER_FAILURE');
-        }
-        const finding = makeFixtureFinding(role, input.title);
-        specialists.push({ role, finding });
-      } catch {
-        return { rehearsalId, status: 'FAILED', error: 'SPECIALIST_FAILED' };
-      }
+    // Run specialists in parallel — fail-fast if any throws
+    let specialists: Array<{
+      role: (typeof roles)[number];
+      finding: Finding;
+    }>;
+    try {
+      const specialistResults = await Promise.all(
+        roles.map((role) =>
+          (async () => {
+            budget.startAttempt(role);
+            if (this.failRole === role) {
+              throw new Error('PROVIDER_FAILURE');
+            }
+            return {
+              role,
+              finding: makeFixtureFinding(role, input.title),
+            };
+          })(),
+        ),
+      );
+      specialists = specialistResults;
+    } catch {
+      return { rehearsalId, status: 'FAILED', error: 'SPECIALIST_FAILED' };
     }
     this.execOrder.push('specialists-parallel');
 
