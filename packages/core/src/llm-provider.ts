@@ -230,7 +230,13 @@ export class LLMProvider {
 
       if (typeof content !== 'string' || !content) throw new Error('Empty model response');
 
-      const parsed: Record<string, unknown> = JSON.parse(content) as Record<string, unknown>;
+      // ponytail: strip markdown code fences if present
+      const cleaned = content
+        .replace(/^```(?:json)?\n?/m, '')
+        .replace(/\n?```$/m, '')
+        .trim();
+
+      const parsed: Record<string, unknown> = JSON.parse(cleaned) as Record<string, unknown>;
       return parsed;
     } finally {
       clearTimeout(timeout);
