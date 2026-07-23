@@ -142,7 +142,7 @@ export class LLMProvider {
   private parseFinding(raw: Record<string, unknown>, fallbackRole?: string): Finding {
     const severity = String(raw.severity ?? 'medium');
     return {
-      role: (fallbackRole ?? String(raw.role ?? 'moderator')) as Finding['role'],
+      role: (fallbackRole || parseAgentRole(String(raw.role ?? 'moderator'))) as Finding['role'],
       claim: String(raw.claim ?? 'No claim provided'),
       evidenceRefs: Array.isArray(raw.evidenceRefs) ? raw.evidenceRefs.map(String) : [],
       confidence: typeof raw.confidence === 'number' ? raw.confidence : 0.5,
