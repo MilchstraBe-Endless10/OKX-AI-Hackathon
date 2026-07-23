@@ -57,7 +57,7 @@ export function registerSpaRoutes(app: FastifyInstance): void {
     });
 
     // Add security headers to all responses
-    app.addHook('onSend', async (request, reply, payload) => {
+    app.addHook('onSend', async (_request, reply, payload) => {
       for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
         if (!reply.hasHeader(key)) {
           reply.header(key, value);
@@ -67,7 +67,7 @@ export function registerSpaRoutes(app: FastifyInstance): void {
     });
   } else {
     // Development mode: just set security headers
-    app.addHook('onSend', async (request, reply, payload) => {
+    app.addHook('onSend', async (_request, reply, payload) => {
       if (reply.getHeader('Content-Type')?.toString().includes('text/html')) {
         for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
           if (!reply.hasHeader(key)) {
