@@ -32,9 +32,23 @@ export function buildApp(): FastifyInstance {
   app.get('/health/live', async () => ({ status: 'ok' }));
 
   app.get('/health/ready', async (_request, reply) => {
-    return reply.code(503).send({
-      status: 'not_ready',
-      reason: 'database and admission not configured',
+    const checks: Record<string, { ok: boolean; detail?: string }> = {};
+
+    const hasModelConfig = !!(process.env.MODEL_API_KEY && process.env.MODEL_BASE_URL && process.env.MODEL_NAME);
+    checks.model_config = { ok: hasModelConfig, detail: hasModelConfig ? undefined : 'MODEL_API_KEY, MODEL_BASE_URL, MODEL_NAME required' };
+
+    const hasDatabasePath = !!process.env.SOPSCAPE_DATABASE_PATH;
+    checks.database = { ok: hasDatabasePath, detail: hasDatabasePath ? undefined : 'SOPSCAPE_DATABASE_PATH not set' };
+
+    const hasAuthConfig = !!(process.env.SOPSCAPE_API_KEY && process.env.SOPSCAPE_SESSION_SECRET);
+    checks.auth = { ok: hasAuthConfig, detail: hasAuthConfig ? undefined : 'SOPSCAPE_API_KEY or SOPSCAPE_SESSION_SECRET missing' };
+
+    const allOk = Object.values(checks).every(c => c.ok);
+    const statusCode = allOk ? 200 : 503;
+
+    return reply.code(statusCode).send({
+      status: allOk ? 'ready' : 'not_ready',
+      checks,
     });
   });
 
