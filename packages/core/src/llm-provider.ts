@@ -89,17 +89,22 @@ export class LLMProvider {
       ? response.consensus.map((f: Record<string, unknown>) => this.parseFinding(f))
       : Object.values(findings);
 
-    const disagreements: Disagreement[] = Array.isArray(response.disagreements)
-      ? response.disagreements.map((d: Record<string, unknown>) => ({
-          topic: String(d.topic ?? ''),
-          positions: Array.isArray(d.positions)
-            ? d.positions.map((p: Record<string, unknown>) => ({
-                role: parseAgentRole(String(p.role ?? 'moderator')),
-                stance: String(p.stance ?? ''),
-              }))
-            : [],
-        }))
-      : [];
+    const disagreements: Disagreement[] = (
+      Array.isArray(response.disagreements)
+        ? response.disagreements
+            .map((d: Record<string, unknown>) => ({
+              topic: String(d.topic ?? ''),
+              positions: Array.isArray(d.positions)
+                ? d.positions.map((p: Record<string, unknown>) => ({
+                    role: parseAgentRole(String(p.role ?? 'moderator')),
+                    stance: String(p.stance ?? ''),
+                  }))
+                : [],
+            }))
+            // ponytail: schema requires min 2 positions, drop incomplete ones
+            .filter((d) => d.positions.length >= 2)
+        : []
+    ) as Disagreement[];
 
     const evidenceGaps: EvidenceGap[] = Array.isArray(response.evidenceGaps)
       ? response.evidenceGaps.map((g: Record<string, unknown>) => ({
