@@ -114,13 +114,13 @@ export class LLMProvider {
 
     const decisionNodes: DecisionNode[] = Array.isArray(response.decisionNodes)
       ? response.decisionNodes.map((n: Record<string, unknown>) => ({
-          id: String(n.id ?? ''),
-          prompt: String(n.prompt ?? ''),
+          id: String(n.id || `node-${Math.random().toString(36).slice(2, 8)}`),
+          prompt: String(n.prompt || 'Choose an action'),
           options: Array.isArray(n.options)
-            ? n.options.map((o: Record<string, unknown>) => ({
-                id: String(o.id ?? ''),
-                label: String(o.label ?? ''),
-                consequence: String(o.consequence ?? ''),
+            ? n.options.map((o: Record<string, unknown>, i: number) => ({
+                id: String(o.id || `opt-${i}`),
+                label: String(o.label || `Option ${i + 1}`),
+                consequence: String(o.consequence || 'Unknown consequence'),
               }))
             : [],
         }))
@@ -153,7 +153,9 @@ export class LLMProvider {
         severity === 'critical'
           ? severity
           : 'medium',
-      affectedStepIds: Array.isArray(raw.affectedStepIds) ? raw.affectedStepIds.map(String) : [],
+      affectedStepIds: Array.isArray(raw.affectedStepIds)
+        ? raw.affectedStepIds.map((s) => String(s))
+        : [],
       unsupported: typeof raw.unsupported === 'boolean' ? raw.unsupported : false,
     };
   }
