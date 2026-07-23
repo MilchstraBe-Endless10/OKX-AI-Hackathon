@@ -169,22 +169,43 @@ export class LLMProvider {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     signal?.addEventListener('abort', () => controller.abort(), { once: true });
 
+    // ponytail: detect Anthropic format by URL
+    const isAnthropic = baseUrl.includes('anthropic');
+
     try {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
+      const url = isAnthropic ? `${baseUrl}/v1/messages` : `${baseUrl}/chat/completions`;
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      const body: Record<string, unknown> = isAnthropic
+        ? {
+            model,
+            max_tokens: 2000,
+            messages: [{ role: 'user', content: `Respond with JSON only.\n\n${prompt}` }],
+          }
+        : {
+            model,
+            messages: [
+              { role: 'system', content: 'Respond with JSON only.' },
+              { role: 'user', content: prompt },
+            ],
+            response_format: { type: 'json_object' },
+            max_tokens: 2000,
+          };
+
+      if (isAnthropic) {
+        headers['x-api-key'] = apiKey;
+        headers['anthropic-version'] = '2023-06-01';
+      } else {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
+      const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: 'Respond with JSON only.' },
-            { role: 'user', content: prompt },
-          ],
-          response_format: { type: 'json_object' },
-          max_tokens: 2000,
-        }),
+        headers,
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
 
@@ -193,9 +214,20 @@ export class LLMProvider {
       }
 
       const data: Record<string, unknown> = (await response.json()) as Record<string, unknown>;
-      const choices = (data.choices as Array<Record<string, unknown>> | undefined)?.[0];
-      const message = choices?.message as Record<string, unknown> | undefined;
-      const content = message?.content;
+
+      // Extract content based on format
+      let content: string;
+      if (isAnthropic) {
+        // Anthropic: content[0].text
+        const contentArr = data.content as Array<Record<string, unknown>> | undefined;
+        content = contentArr?.[0]?.text as string;
+      } else {
+        // OpenAI: choices[0].message.content
+        const choices = (data.choices as Array<Record<string, unknown>> | undefined)?.[0];
+        const message = choices?.message as Record<string, unknown> | undefined;
+        content = message?.content as string;
+      }
+
       if (typeof content !== 'string' || !content) throw new Error('Empty model response');
 
       const parsed: Record<string, unknown> = JSON.parse(content) as Record<string, unknown>;
