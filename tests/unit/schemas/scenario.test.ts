@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { ScenarioSchema, ScenarioPhaseSchema, DifficultyLevelSchema } from '@sopscape/contracts';
+import { describe, it, expect } from 'vitest';
+import { ScenarioSchema, ScenarioPhaseSchema } from '@sopscape/contracts';
 
 describe('ScenarioSchema', () => {
   const validScenario = {

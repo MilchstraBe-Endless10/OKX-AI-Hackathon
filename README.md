@@ -7,15 +7,37 @@ SOPscape Council 把静态 SOP 转换成可决策、可验证、可分享的 AI 
 ## 从这里开始
 
 - [项目详细说明](PROJECT_OVERVIEW.zh-CN.md)：项目解决什么问题、如何工作、3D/A2MCP/MCP 的作用和完整用户流程。
-- [团队开发规范](CONTRIBUTING.md)：gstack、Git Worktree、分支、Hunk、PR、两人分工、冲突与回退。
-- [明早双人启动与实时进度](docs/TEAM_START_TOMORROW.zh-CN.md)：A/B 的 AI 启动提示词、首日任务和进度板。
+- [产品功能、API 与验收清单](docs/PRODUCT_PLATFORM.zh-CN.md)：完整模块、API、安全边界和完成度。
+- [部署与 OKX.AI 上架](docs/DEPLOYMENT.md)
 - [开发执行与验证手册](.omx/plans/sopscape-council-development-execution-verification.zh-CN.md)
-- [产品与技术方案](.omx/plans/prd-sopscape-council.md)
-- [测试规范](.omx/plans/test-spec-sopscape-council.md)
 
 ## 当前状态
 
-当前仓库处于设计和工程准备阶段，已完成需求、架构、执行计划与测试规范；应用源码尚未开始实现。文档中的性能、协议和上线状态是交付目标，不能当作已经完成的功能。
+当前仓库已具备可运行的纵向产品闭环：
+
+- **身份认证**：邮箱密码登录、HttpOnly Session Cookie、RBAC（Owner/Editor/Viewer）
+- **邀请系统**：一次性邀请 token、48 小时有效、HMAC 摘要存储
+- **团队管理**：成员列表、角色修改、成员移除、防最后一个 owner 降级
+- **SOP 核心**：三专家评审、数字护照、BLOCK/WARN/READY 门禁
+- **3D 指挥室**：Three.js 单一渲染循环、风险路径、分支决策
+- **版本管理**：SOP 历史、版本风险比较、决策回放
+- **训练系统**：训练分配、完成评分、审计报告
+- **安全分享**：只读分享链接、过期/次数限制、/r/:token 报告页
+- **A2MCP**：Bearer 鉴权、限流、58s Deadline、审计日志
+- **MCP**：官方 SDK 无状态基线（Streamable HTTP）
+- **国际化**：10 种语言菜单、深色/浅色/系统主题
+
+```bash
+pnpm install
+pnpm --filter @sopscape/server dev
+# 另一个终端
+pnpm --filter @sopscape/web dev
+```
+
+默认使用确定性 Demo Provider（无需 API Key）。配置 `MODEL_API_KEY` / `MODEL_BASE_URL` / `MODEL_NAME` 后可接入真实 OpenAI 兼容模型。
+
+Web 与 API 默认通过 Vite 开发代理协作；生产环境建议用 Nginx/平台网关终止 HTTPS，
+再反向代理到 Node 服务。
 
 ## 两人分工
 
@@ -23,5 +45,3 @@ SOPscape Council 把静态 SOP 转换成可决策、可验证、可分享的 AI 
 - 开发者 B：React、Three.js、GSAP、六个 UI 组件、决策体验、E2E 与前端性能。
 
 先合并 Contracts 和 Fixture，前后端再通过独立 Worktree 并行开发。任何功能都通过 PR、另一人审查、Hunk 和 CI 后进入 `main`。
-
-明早开始前，两人先按 [团队开发规范的“明早启动流程”](CONTRIBUTING.md#5-明早启动流程2026-07-22) 执行；不要直接凭口头分工修改 `main`。

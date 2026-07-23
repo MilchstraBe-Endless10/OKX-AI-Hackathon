@@ -1,21 +1,29 @@
 import type { UIPhase } from '../lib/api';
 import type { CouncilResult } from '@sopscape/contracts';
+import { getMessages, type AppMessages } from '../lib/preferences';
 
 interface CouncilResultsProps {
   phase: UIPhase;
   rehearsalId: string | null;
   result: CouncilResult | null;
+  errorMessage?: string | null;
+  messages?: AppMessages;
   selectedDecision?: string | null;
   onDecision?: (choiceId: string) => void;
+  onShare?: () => void;
 }
 
 export default function CouncilResults({
   phase,
   rehearsalId,
   result,
+  errorMessage = null,
+  messages,
   selectedDecision = null,
   onDecision,
+  onShare,
 }: CouncilResultsProps) {
+  const copy = messages ?? getMessages('zh-CN');
   const isFailed = phase === 'FAILED';
   const isLoading =
     phase !== 'READY' &&
@@ -30,10 +38,8 @@ export default function CouncilResults({
         className="bg-surface/90 backdrop-blur rounded-lg border border-border p-4"
         data-testid="council-empty"
       >
-        <h2 className="text-base font-semibold text-slate-100 mb-2">Council Results</h2>
-        <p className="text-sm text-slate-400">
-          Submit an SOP to begin analysis. Three experts will review your procedure.
-        </p>
+        <h2 className="text-base font-semibold text-slate-100 mb-2">{copy.resultTitle}</h2>
+        <p className="text-sm text-slate-400">{copy.emptyBody}</p>
       </div>
     );
   }
@@ -45,10 +51,9 @@ export default function CouncilResults({
         data-testid="council-error"
         role="alert"
       >
-        <h2 className="text-base font-semibold text-danger mb-2">Analysis Failed</h2>
-        <p className="text-sm text-slate-300">
-          One or more experts could not complete analysis. Check the error details and try again.
-        </p>
+        <h2 className="text-base font-semibold text-danger mb-2">{copy.failedTitle}</h2>
+        <p className="text-sm text-slate-300">{errorMessage ?? copy.callFailed}</p>
+        <p className="mt-2 text-xs text-slate-400">{copy.retry}</p>
       </div>
     );
   }
@@ -59,51 +64,65 @@ export default function CouncilResults({
         className="bg-surface/90 backdrop-blur rounded-lg border border-border p-4 space-y-3"
         data-testid="council-loading"
       >
-        <h2 className="text-base font-semibold text-slate-100">Council Results</h2>
+        <h2 className="text-base font-semibold text-slate-100">{copy.loadingTitle}</h2>
         <div className="space-y-2">
-          {['Consensus', 'Disagreements', 'Evidence Gaps', 'Decisions'].map((section) => (
+          {['共识', '分歧', '证据缺口', '决策'].map((section) => (
             <div key={section} className="h-8 bg-navy-800/50 rounded animate-pulse" />
           ))}
         </div>
         <p className="text-xs text-slate-500" aria-live="polite">
-          Waiting for analysis to complete…
+          {copy.loadingText}
         </p>
       </div>
     );
   }
 
   if (!result) {
-    return <div role="alert">A2MCP returned no council result.</div>;
+    return <div role="alert">{copy.retry}</div>;
   }
 
-  // READY state — show fixture results
   return (
     <div
       className="bg-surface/90 backdrop-blur rounded-lg border border-border p-4 space-y-4"
       data-testid="council-ready"
     >
-      <h2 className="text-base font-semibold text-slate-100">Council Results</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold text-slate-100">{copy.resultTitle}</h2>
+        {onShare && rehearsalId && (
+          <button
+            onClick={onShare}
+            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-border bg-surface text-slate-300 hover:text-slate-100 hover:bg-surface/80 transition-colors"
+          >
+            分享报告
+          </button>
+        )}
+      </div>
 
       {/* Consensus */}
-      <section aria-label="Consensus findings">
-        <h3 className="text-sm font-medium text-safe mb-2">Consensus</h3>
+      <section aria-label={copy.consensus}>
+        <h3 className="text-sm font-medium text-safe mb-2">{copy.consensus}</h3>
         <Consensus findings={result.consensus} />
       </section>
 
       {/* Disagreements */}
-      <section aria-label="Expert disagreements">
-        <h3 className="text-sm font-medium text-caution mb-2">Disagreements</h3>
-        <Disagreements disagreements={result.disagreements} evidenceGaps={result.evidenceGaps} />
+      <section aria-label={copy.disagreements}>
+        <h3 className="text-sm font-medium text-caution mb-2">{copy.disagreements}</h3>
+        <Disagreements
+          disagreements={result.disagreements}
+          evidenceGaps={result.evidenceGaps}
+          copy={copy}
+        />
       </section>
 
       {/* Decision Nodes */}
-      <section aria-label="Decision points">
-        <h3 className="text-sm font-medium text-teal-400 mb-2">Decision Points</h3>
+      <section aria-label={copy.decisions}>
+        <h3 className="text-sm font-medium text-teal-400 mb-2">{copy.decisions}</h3>
         <Decisions
           rehearsalId={rehearsalId}
           nodes={result.decisionNodes}
           selectedDecision={selectedDecision}
           onDecision={onDecision}
+          copy={copy}
         />
       </section>
     </div>
@@ -126,14 +145,16 @@ function Consensus({ findings }: { findings: CouncilResult['consensus'] }) {
 function Disagreements({
   disagreements,
   evidenceGaps,
+  copy,
 }: {
   disagreements: CouncilResult['disagreements'];
   evidenceGaps: CouncilResult['evidenceGaps'];
+  copy: AppMessages;
 }) {
   return (
     <div className="space-y-2 text-sm">
       {disagreements.length === 0 && evidenceGaps.length === 0 ? (
-        <p className="text-slate-400">No unresolved disagreements or evidence gaps.</p>
+        <p className="text-slate-400">{copy.disagreements}: 0</p>
       ) : null}
       {disagreements.map((item) => (
         <div
@@ -150,7 +171,7 @@ function Disagreements({
       ))}
       {evidenceGaps.map((gap) => (
         <p key={gap.description} className="text-slate-300">
-          Evidence gap: {gap.description}
+          {copy.evidence}: {gap.description}
         </p>
       ))}
     </div>
@@ -162,18 +183,20 @@ function Decisions({
   nodes,
   selectedDecision,
   onDecision,
+  copy,
 }: {
   rehearsalId: string | null;
   nodes: CouncilResult['decisionNodes'];
   selectedDecision: string | null;
   onDecision?: (choiceId: string) => void;
+  copy: AppMessages;
 }) {
   const riskyChoiceId = nodes[0]?.options[0]?.id;
   const isSafe = selectedDecision !== riskyChoiceId;
 
   return (
     <div className="space-y-2">
-      {rehearsalId && <p className="text-xs text-slate-500 font-mono">Session {rehearsalId}</p>}
+      {rehearsalId && <p className="text-xs text-slate-500 font-mono">A2MCP · {rehearsalId}</p>}
       {nodes.map((node) => (
         <div key={node.id} className="px-3 py-3 bg-navy-800/50 rounded-md border border-border">
           <p className="text-sm text-slate-200 font-medium mb-2">{node.prompt}</p>
@@ -198,11 +221,11 @@ function Decisions({
           role="status"
           aria-live="polite"
         >
-          <strong>{isSafe ? '安全路径已锁定' : '风险路径已触发'}</strong>
+          <strong>{isSafe ? copy.safePath : copy.riskActivated}</strong>
           <p>
             {isSafe
-              ? '核心转为稳定态，风险链路收束，并记录独立核验与上报。'
-              : '核心进入告警态，凭证泄漏路径被高亮，建议立即隔离并修改密码。'}
+              ? `${copy.currentRisk}: ${copy.riskLow} · ${copy.evidence}: ${copy.schemaPassed}`
+              : `${copy.currentRisk}: ${copy.riskHigh} · ${copy.riskActivated}`}
           </p>
         </div>
       )}

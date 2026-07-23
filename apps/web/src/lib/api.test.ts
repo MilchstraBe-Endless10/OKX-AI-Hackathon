@@ -61,7 +61,7 @@ describe('A2MCP adapter', () => {
     );
     const scene = councilToScene(response.council);
 
-    expect(request).toHaveBeenCalledWith('/a2mcp/generate-rehearsal', expect.any(Object));
+    expect(request).toHaveBeenCalledWith('/api/generate-rehearsal', expect.any(Object));
     expect(response.rehearsalId).toBe('r-live-1');
     expect(scene.agentStates).toHaveLength(COUNCIL_FIXTURE.consensus.length);
     expect(scene.decisionNodes[0]?.id).toBe(COUNCIL_FIXTURE.decisionNodes[0]?.id);
@@ -83,5 +83,23 @@ describe('A2MCP adapter', () => {
         request as typeof fetch,
       ),
     ).rejects.toThrow('Invalid A2MCP response');
+  });
+
+  test('preserves the server error message for an actionable failure state', async () => {
+    const request = vi.fn(async () =>
+      Promise.resolve(
+        new Response(JSON.stringify({ message: '模型服务暂时不可用' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+
+    await expect(
+      generateRehearsal(
+        { title: 'test', content: 'content', locale: 'zh-CN' },
+        request as typeof fetch,
+      ),
+    ).rejects.toThrow('模型服务暂时不可用');
   });
 });

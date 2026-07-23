@@ -31,7 +31,20 @@ export const SopInputSchema = z
         });
       }
     }),
-    locale: z.enum(['zh-CN', 'en-US']).optional(),
+    locale: z
+      .enum([
+        'zh-CN',
+        'en-US',
+        'hi-IN',
+        'es-ES',
+        'ar-SA',
+        'fr-FR',
+        'bn-BD',
+        'pt-BR',
+        'ru-RU',
+        'ja-JP',
+      ])
+      .optional(),
     scenarioMetadata: ScenarioMetadataSchema.optional(),
   })
   .strict();

@@ -64,13 +64,15 @@ export interface A2mcpResponse {
   rehearsalId: string;
   status: 'READY';
   council: CouncilResult;
+  passport?: SopPassport;
+  sop?: SopRecord;
 }
 
 export async function generateRehearsal(
   input: SopInput,
   request: typeof fetch = fetch,
 ): Promise<A2mcpResponse> {
-  const response = await request('/a2mcp/generate-rehearsal', {
+  const response = await request('/api/generate-rehearsal', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -86,13 +88,19 @@ export async function generateRehearsal(
   }
   if (!body || typeof body !== 'object') throw new Error('Invalid A2MCP response');
 
-  const { rehearsalId, status, ...councilData } = body as Record<string, unknown>;
+  const { rehearsalId, status, passport, sop, ...councilData } = body as Record<string, unknown>;
   const council = CouncilResultSchema.safeParse(councilData);
   if (typeof rehearsalId !== 'string' || status !== 'READY' || !council.success) {
     throw new Error('Invalid A2MCP response');
   }
 
-  return { rehearsalId, status, council: council.data };
+  return {
+    rehearsalId,
+    status,
+    council: council.data,
+    passport: passport as SopPassport | undefined,
+    sop: sop as SopRecord | undefined,
+  };
 }
 
 export function councilToScene(council: CouncilResult): Scene {
@@ -136,5 +144,7 @@ import {
   SceneSchema,
   type CouncilResult,
   type Scene,
+  type SopPassport,
+  type SopRecord,
   type SopInput,
 } from '@sopscape/contracts';

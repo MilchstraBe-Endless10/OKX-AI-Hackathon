@@ -49,18 +49,56 @@ export {
 export { ApiErrorSchema, type ApiError } from './api-error.js';
 
 export {
+  ReadinessVerdictSchema,
+  RiskLevelSchema,
+  SopPassportSchema,
+  SopVersionSchema,
+  SopRecordSchema,
+  DecisionEvaluationSchema,
+  VersionComparisonSchema,
+  type ReadinessVerdict,
+  type RiskLevel,
+  type SopPassport,
+  type SopVersion,
+  type SopRecord,
+  type DecisionEvaluation,
+  type VersionComparison,
+} from './product.js';
+
+export {
+  CreateShareRequestSchema,
+  CreateShareResponseSchema,
+  ShareRecordSchema,
+  ShareListResponseSchema,
+  SharedRehearsalSchema,
+  type CreateShareRequest,
+  type CreateShareResponse,
+  type ShareRecord,
+  type ShareListResponse,
+  type SharedRehearsal,
+} from './share.js';
+
+export {
+  InvitationStatusSchema,
+  type InvitationStatus,
+  type InvitationRecord,
+  MemberRecordSchema,
+  type MemberRecord,
+} from './invitation.js';
+
+export {
   DifficultyLevelSchema,
   DecisionOptionSchema,
   PhaseConsequenceSchema,
   PhaseScoringSchema,
   ScenarioPhaseSchema,
-  ScenarioMetadataSchema as ScenarioMetaSchema,
+  ScenarioProfileSchema,
   ScenarioSchema,
   type DifficultyLevel,
   type DecisionOption,
   type PhaseConsequence,
   type PhaseScoring,
   type ScenarioPhase,
-  type ScenarioMetadata as ScenarioMeta,
+  type ScenarioProfile,
   type Scenario,
 } from './scenario.js';
