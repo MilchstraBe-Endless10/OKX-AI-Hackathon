@@ -18,3 +18,4 @@ export {
   type GenerationProgress,
   type CouncilResult,
 } from './generate.js';
+export { generateScenario, type ScenarioGenerationConfig } from './scenario-generator.js';
