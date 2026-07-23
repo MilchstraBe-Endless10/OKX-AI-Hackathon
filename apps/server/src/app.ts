@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { SopInputSchema, CouncilResultSchema } from '@sopscape/contracts';
 import { startGeneration } from '@sopscape/core';
 import { registerScenarioRoutes } from './scenario-routes.js';
+import { registerSpaRoutes } from './spa-routes.js';
 
 // ponytail: A2MCP is the competition ingress — 58s absolute deadline interface, no payment.
 // All real orchestration happens in @sopscape/core; this route only maps transport.
@@ -130,6 +131,7 @@ export function buildApp(): FastifyInstance {
   });
 
   registerScenarioRoutes(app);
+  registerSpaRoutes(app);
 
   return app;
 }
