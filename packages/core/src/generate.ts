@@ -101,6 +101,11 @@ export async function startGeneration(
       // Validate council result
       const councilParsed = CouncilResultSchema.safeParse(council);
       if (!councilParsed.success) {
+        console.error(
+          'Council validation failed:',
+          JSON.stringify(councilParsed.error.issues, null, 2),
+        );
+        console.error('Raw council:', JSON.stringify(council, null, 2));
         return { rehearsalId, status: 'FAILED', error: 'COUNCIL_VALIDATION_FAILED' };
       }
 
