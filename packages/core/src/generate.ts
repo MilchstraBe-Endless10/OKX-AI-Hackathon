@@ -1,32 +1,156 @@
-// @sopscape/core — orchestration: startGeneration with fixture-driven FakeProvider
-// ponytail: minimal orchestration — no real model, no DB, no MCP.
+// @sopscape/core — orchestration: FakeProvider + LLMProvider with partial failure handling
+// ponytail: minimal orchestration — LLMProvider is optional, FakeProvider is default.
 // Fixed order: 3 specialists parallel → moderator → persist.
+// Partial failure: < 3 specialists → PARTIAL_FAILED, no moderator, no decision nodes.
 
 import {
   CouncilResultSchema,
   SopInputSchema,
   type CouncilResult,
   type Finding,
+  type AgentRole,
 } from '@sopscape/contracts';
 import { AttemptBudget } from './attempt-budget.js';
 import { LifecycleState } from './lifecycle.js';
+import { LLMProvider, type LLMConfig, parseFinding } from './llm-provider.js';
 
-export type { CouncilResult };
+export type { CouncilResult, LLMConfig };
 
 export interface GenerationResult {
   rehearsalId: string;
   status: LifecycleState;
   council?: CouncilResult;
+  partialFindings?: Finding[];
+  failedRoles?: AgentRole[];
   error?: string;
 }
 
 export interface GenerationOptions {
   progressSink?: (event: { phase: LifecycleState }) => void;
   signal?: AbortSignal;
+  llm?: LLMConfig; // provide for real model calls
 }
 
 export interface GenerationProgress {
   phase: LifecycleState;
+}
+
+/**
+ * startGeneration — the Core API entry point.
+ * Uses FakeProvider by default; pass llm config for real model calls.
+ */
+export async function startGeneration(
+  input: { title: string; content: string; locale?: string },
+  options?: GenerationOptions,
+): Promise<GenerationResult> {
+  const llmConfig = options?.llm;
+  if (llmConfig?.apiKey && llmConfig.baseUrl && llmConfig.modelName) {
+    return runRealProvider(input, llmConfig, options);
+  }
+  return runFakeProvider(input, options);
+}
+
+// ─── Real LLM Provider ───────────────────────────────────────────
+
+async function runRealProvider(
+  input: { title: string; content: string; locale?: string },
+  llmConfig: LLMConfig,
+  options?: GenerationOptions,
+): Promise<GenerationResult> {
+  const { progressSink, signal } = options ?? {};
+
+  if (signal?.aborted) {
+    return { rehearsalId: genId(), status: 'CANCELLED', error: 'ABORTED' };
+  }
+
+  const parsed = SopInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return { rehearsalId: genId(), status: 'FAILED', error: 'VALIDATION_ERROR' };
+  }
+
+  const rehearsalId = genId();
+  const budget = new AttemptBudget({ compression: false });
+  const provider = new LLMProvider(llmConfig);
+
+  emit(progressSink, 'QUEUED');
+  emit(progressSink, 'SPECIALISTS_RUNNING');
+
+  // Run specialists with retry via LLMProvider
+  const { successes, failures } = await provider.runSpecialists(input, signal);
+
+  // Track budget for successful specialist attempts
+  for (const s of successes) {
+    try {
+      budget.startAttempt(s.role);
+    } catch {
+      // budget exceeded but we already have the result
+    }
+  }
+
+  if (signal?.aborted) {
+    return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
+  }
+
+  // Partial failure: not all 3 specialists succeeded
+  if (successes.length < 3) {
+    const failedRoles = failures.map((f) => f.role);
+    return {
+      rehearsalId,
+      status: 'PARTIAL_FAILED',
+      partialFindings: successes.map((s) => s.finding),
+      failedRoles,
+      error: `Specialist(s) failed: ${failedRoles.join(', ')}`,
+    };
+  }
+
+  // All 3 succeeded → proceed to moderator
+  emit(progressSink, 'MODERATING');
+
+  try {
+    budget.startAttempt('moderator');
+  } catch {
+    return { rehearsalId, status: 'FAILED', error: 'BUDGET_EXCEEDED' };
+  }
+
+  const findings = successes.map((s) => s.finding);
+  const council = await provider.runModerator(findings, signal);
+
+  if (!council) {
+    // Moderator failed but specialists succeeded → partial
+    return {
+      rehearsalId,
+      status: 'PARTIAL_FAILED',
+      partialFindings: findings,
+      failedRoles: ['moderator'],
+      error: 'Moderator failed to produce valid council result',
+    };
+  }
+
+  const councilValid = CouncilResultSchema.safeParse(council);
+  if (!councilValid.success) {
+    return {
+      rehearsalId,
+      status: 'PARTIAL_FAILED',
+      partialFindings: findings,
+      failedRoles: ['moderator'],
+      error: 'Moderator result validation failed',
+    };
+  }
+
+  emit(progressSink, 'PERSISTING');
+  emit(progressSink, 'READY');
+
+  return { rehearsalId, status: 'READY', council: councilValid.data };
+}
+
+// ─── Fake Provider (test fixtures) ───────────────────────────────
+
+async function runFakeProvider(
+  input: { title: string; content: string; locale?: string },
+  options?: GenerationOptions,
+): Promise<GenerationResult> {
+  const provider = new FakeProvider();
+  return provider.run(input, options);
 }
 
 /**
@@ -47,12 +171,10 @@ export class FakeProvider {
   ): Promise<GenerationResult> {
     const { progressSink, signal } = options ?? {};
 
-    // Check abort before starting
     if (signal?.aborted) {
       return { rehearsalId: genId(), status: 'CANCELLED', error: 'ABORTED' };
     }
 
-    // Validate input at schema level
     const parsed = SopInputSchema.safeParse(input);
     if (!parsed.success) {
       return { rehearsalId: genId(), status: 'FAILED', error: 'VALIDATION_ERROR' };
@@ -61,15 +183,11 @@ export class FakeProvider {
     const rehearsalId = genId();
     const budget = new AttemptBudget({ compression: false });
 
-    // QUEUED
     emit(progressSink, 'QUEUED');
-
-    // SPECIALISTS_RUNNING — 3 parallel
     emit(progressSink, 'SPECIALISTS_RUNNING');
 
     const roles = ['procedure-analyst', 'risk-challenger', 'evidence-auditor'] as const;
 
-    // Run specialists in parallel — fail-fast if any throws
     let specialists: Array<{
       role: (typeof roles)[number];
       finding: Finding;
@@ -99,7 +217,6 @@ export class FakeProvider {
       return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
     }
 
-    // MODERATING
     emit(progressSink, 'MODERATING');
 
     try {
@@ -125,7 +242,6 @@ export class FakeProvider {
       ],
     };
 
-    // Validate council result
     const councilParsed = CouncilResultSchema.safeParse(council);
     if (!councilParsed.success) {
       return { rehearsalId, status: 'FAILED', error: 'COUNCIL_VALIDATION_FAILED' };
@@ -133,10 +249,7 @@ export class FakeProvider {
 
     this.execOrder.push('moderator');
 
-    // PERSISTING
     emit(progressSink, 'PERSISTING');
-
-    // READY
     emit(progressSink, 'READY');
 
     return { rehearsalId, status: 'READY', council };
@@ -160,12 +273,10 @@ export class SlowFakeProvider extends FakeProvider {
   ): Promise<GenerationResult> {
     const { progressSink, signal } = options ?? {};
 
-    // Check abort before starting
     if (signal?.aborted) {
       return { rehearsalId: genId(), status: 'CANCELLED', error: 'ABORTED' };
     }
 
-    // Validate input at schema level
     const parsed = SopInputSchema.safeParse(input);
     if (!parsed.success) {
       return { rehearsalId: genId(), status: 'FAILED', error: 'VALIDATION_ERROR' };
@@ -173,21 +284,15 @@ export class SlowFakeProvider extends FakeProvider {
 
     const rehearsalId = genId();
 
-    // QUEUED
     emit(progressSink, 'QUEUED');
-
-    // SPECIALISTS_RUNNING — 3 parallel (with delay)
     emit(progressSink, 'SPECIALISTS_RUNNING');
 
-    // Artificial delay to test deadline
     await new Promise((resolve) => setTimeout(resolve, this.delayMs));
 
-    // Check abort after delay
     if (signal?.aborted) {
       return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
     }
 
-    // Rest of the flow is the same as FakeProvider
     const roles = ['procedure-analyst', 'risk-challenger', 'evidence-auditor'] as const;
 
     const specialists = roles.map((role) => ({
@@ -195,7 +300,6 @@ export class SlowFakeProvider extends FakeProvider {
       finding: makeFixtureFinding(role, input.title),
     }));
 
-    // MODERATING
     emit(progressSink, 'MODERATING');
 
     const council: CouncilResult = {
@@ -220,10 +324,7 @@ export class SlowFakeProvider extends FakeProvider {
       return { rehearsalId, status: 'FAILED', error: 'COUNCIL_VALIDATION_FAILED' };
     }
 
-    // PERSISTING
     emit(progressSink, 'PERSISTING');
-
-    // READY
     emit(progressSink, 'READY');
 
     return { rehearsalId, status: 'READY', council };
@@ -253,18 +354,6 @@ function makeFixtureFinding(role: string, title: string): Finding {
     affectedStepIds: ['step-1'],
     unsupported: false,
   };
-}
-
-/**
- * startGeneration — the Core API entry point.
- * Uses FakeProvider for this vertical slice; replace with real provider later.
- */
-export async function startGeneration(
-  input: { title: string; content: string; locale?: string },
-  options?: GenerationOptions,
-): Promise<GenerationResult> {
-  const provider = new FakeProvider();
-  return provider.run(input, options);
 }
 
 export { isValidTransition } from './lifecycle.js';

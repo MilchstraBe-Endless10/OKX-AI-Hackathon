@@ -22,6 +22,10 @@ describe('LifecycleState transitions', () => {
     ['READY', 'EXPIRED', true],
     ['FAILED', 'EXPIRED', true],
     ['CANCELLED', 'EXPIRED', true],
+    ['PARTIAL_FAILED', 'EXPIRED', true],
+    ['READY', 'QUEUED', false],
+    ['FAILED', 'QUEUED', false],
+    ['PARTIAL_FAILED', 'QUEUED', false],
     ['SPECIALISTS_RUNNING', 'READY', false],
     ['MODERATING', 'SPECIALISTS_RUNNING', false],
     ['PERSISTING', 'MODERATING', false],
@@ -41,6 +45,14 @@ describe('LifecycleState transitions', () => {
   it('rejects moderation with fewer than 3 specialist results', () => {
     expect(isValidTransition('SPECIALISTS_RUNNING', 'MODERATING', 2)).toBe(false);
     expect(isValidTransition('SPECIALISTS_RUNNING', 'MODERATING', 3)).toBe(true);
+  });
+
+  it('allows SPECIALISTS_RUNNING → PARTIAL_FAILED (partial specialist failure)', () => {
+    expect(isValidTransition('SPECIALISTS_RUNNING', 'PARTIAL_FAILED')).toBe(true);
+  });
+
+  it('allows MODERATING → PARTIAL_FAILED (moderator failure)', () => {
+    expect(isValidTransition('MODERATING', 'PARTIAL_FAILED')).toBe(true);
   });
 });
 

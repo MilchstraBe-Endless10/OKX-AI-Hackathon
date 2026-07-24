@@ -17,5 +17,11 @@ export {
   type GenerationOptions,
   type GenerationProgress,
   type CouncilResult,
+  type LLMConfig,
 } from './generate.js';
-export { generateScenario, type ScenarioGenerationConfig } from './scenario-generator.js';
+export {
+  LLMProvider,
+  parseAgentRole,
+  parseFinding,
+  type LLMConfig as LLMConfigDirect,
+} from './llm-provider.js';

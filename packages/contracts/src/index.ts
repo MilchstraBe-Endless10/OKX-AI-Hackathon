@@ -47,20 +47,3 @@ export {
 } from './decision.js';
 
 export { ApiErrorSchema, type ApiError } from './api-error.js';
-
-export {
-  DifficultyLevelSchema,
-  DecisionOptionSchema,
-  PhaseConsequenceSchema,
-  PhaseScoringSchema,
-  ScenarioPhaseSchema,
-  ScenarioMetadataSchema as ScenarioMetaSchema,
-  ScenarioSchema,
-  type DifficultyLevel,
-  type DecisionOption,
-  type PhaseConsequence,
-  type PhaseScoring,
-  type ScenarioPhase,
-  type ScenarioMetadata as ScenarioMeta,
-  type Scenario,
-} from './scenario.js';

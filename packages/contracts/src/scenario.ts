@@ -56,7 +56,7 @@ export const ScenarioMetadataSchema = z
 export const ScenarioSchema = z
   .object({
     id: z.string().min(1),
-    sopId: z.string().min(1).optional(), // Optional until SOP is persisted
+    sopId: z.string().min(1),
     title: z.string().min(1),
     description: z.string().min(1),
     phases: z.array(ScenarioPhaseSchema).min(1).max(20),
