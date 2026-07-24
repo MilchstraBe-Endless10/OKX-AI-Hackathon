@@ -50,11 +50,21 @@ export default function CommandRoom({
     const mount = mountRef.current;
 
     // Single render loop — Three.js owns renderer.setAnimationLoop
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: true,
-      powerPreference: 'high-performance',
-    });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        powerPreference: 'high-performance',
+      });
+    } catch {
+      // ponytail: no WebGL — show fallback, don't crash the whole app
+      const fallback = document.createElement('div');
+      fallback.textContent = '3D 场景需要 WebGL 支持';
+      fallback.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:14px;';
+      mount.appendChild(fallback);
+      return;
+    }
     const quality = getQualityProfile();
     const initialBounds = mount.getBoundingClientRect();
     const initialWidth = Math.max(initialBounds.width, 1);
