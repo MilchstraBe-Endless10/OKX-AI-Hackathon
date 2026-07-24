@@ -12,7 +12,7 @@ import {
 } from '@sopscape/contracts';
 import { AttemptBudget } from './attempt-budget.js';
 import { LifecycleState } from './lifecycle.js';
-import { LLMProvider, type LLMConfig, parseFinding } from './llm-provider.js';
+import { LLMProvider, type LLMConfig } from './llm-provider.js';
 
 export type { CouncilResult, LLMConfig };
 

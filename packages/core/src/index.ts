@@ -23,5 +23,4 @@ export {
   LLMProvider,
   parseAgentRole,
   parseFinding,
-  type LLMConfig as LLMConfigDirect,
 } from './llm-provider.js';

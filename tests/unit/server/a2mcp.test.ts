@@ -147,6 +147,6 @@ describe('GET /health/ready', () => {
     const response = await app.inject({ method: 'GET', url: '/health/ready' });
     expect(response.statusCode).toBe(503);
     const body = response.json();
-    expect(body.status).toBe('not_ready');
+    expect(body.code).toBe('NOT_READY');
   });
 });

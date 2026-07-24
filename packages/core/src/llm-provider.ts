@@ -1,6 +1,6 @@
-// @sopscape/core — real LLM provider with retry and timeout
+// @sopscape/core — real LLM provider with retry, timeout, and fallback
 // ponytail: minimal wrapper around OKX.AI compatible API.
-// 30s timeout per call, exponential backoff retry, no new deps.
+// 30s timeout per call, 1 retry, fallback to glm-4.6 if configured.
 
 import {
   type AgentRole,
@@ -15,6 +15,7 @@ export interface LLMConfig {
   apiKey: string;
   baseUrl: string;
   modelName: string;
+  fallbackName?: string; // e.g. 'glm-4.6' — used on primary failure
 }
 
 const CALL_TIMEOUT_MS = 30_000;
@@ -33,12 +34,12 @@ export class LLMProvider {
     const roles: AgentRole[] = ['procedure-analyst', 'risk-challenger', 'evidence-auditor'];
     const results = await Promise.all(
       roles.map(async (role) => {
-        const finding = await this.callWithRetry(
-          'specialist',
-          role,
+        const raw = await this.callWithRetry(
           this.buildSpecialistPrompt(role, input),
           signal,
         );
+        // Runtime schema validation — null if invalid
+        const finding = parseFinding(raw);
         return { role, finding };
       }),
     );
@@ -55,9 +56,12 @@ export class LLMProvider {
     return { successes, failures };
   }
 
-  async runModerator(findings: Finding[], signal?: AbortSignal): Promise<CouncilResult | null> {
+  async runModerator(
+    findings: Finding[],
+    signal?: AbortSignal,
+  ): Promise<CouncilResult | null> {
     const prompt = this.buildModeratorPrompt(findings);
-    const raw = await this.callWithRetry('moderator', 'moderator', prompt, signal);
+    const raw = await this.callWithRetry(prompt, signal);
     if (!raw) return null;
 
     const validated = CouncilResultSchema.safeParse(raw);
@@ -65,21 +69,27 @@ export class LLMProvider {
   }
 
   private async callWithRetry(
-    attemptType: 'specialist' | 'moderator',
-    role: AgentRole | string,
     prompt: string,
     signal?: AbortSignal,
-  ): Promise<Record<string, unknown> | null> {
+  ): Promise<unknown> {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (signal?.aborted) return null;
       if (attempt > 0) {
         await new Promise((r) => setTimeout(r, 500 * attempt));
       }
       try {
-        const result = await this.callOnce(prompt, signal);
+        const result = await this.callOnce(prompt, this.config.modelName, signal);
         if (result) return result;
       } catch {
-        // retry on next iteration
+        // If primary fails and fallback configured, try fallback on last retry
+        if (attempt === MAX_RETRIES && this.config.fallbackName) {
+          try {
+            const fallback = await this.callOnce(prompt, this.config.fallbackName, signal);
+            if (fallback) return fallback;
+          } catch {
+            // fallback also failed → return null
+          }
+        }
       }
     }
     return null;
@@ -87,15 +97,14 @@ export class LLMProvider {
 
   private async callOnce(
     prompt: string,
+    modelName: string,
     signal?: AbortSignal,
-  ): Promise<Record<string, unknown> | null> {
+  ): Promise<unknown> {
     const controller = new AbortController();
-    const combined = new AbortController();
-
-    const timeout = setTimeout(() => combined.abort(), CALL_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), CALL_TIMEOUT_MS);
     signal?.addEventListener('abort', () => {
       clearTimeout(timeout);
-      combined.abort();
+      controller.abort();
     });
 
     const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
@@ -105,7 +114,7 @@ export class LLMProvider {
         Authorization: `Bearer ${this.config.apiKey}`,
       },
       body: JSON.stringify({
-        model: this.config.modelName,
+        model: modelName,
         messages: [
           {
             role: 'system',
@@ -116,7 +125,7 @@ export class LLMProvider {
         temperature: 0.1,
         max_tokens: 2000,
       }),
-      signal: combined.signal,
+      signal: controller.signal,
     });
 
     clearTimeout(timeout);
@@ -125,7 +134,9 @@ export class LLMProvider {
       throw new Error(`API returned ${response.status}`);
     }
 
-    const data = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const data = (await response.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
     const content = data.choices?.[0]?.message?.content;
     if (!content) return null;
 
@@ -179,7 +190,7 @@ export function parseAgentRole(raw: unknown): AgentRole | null {
   return result.success ? result.data : null;
 }
 
-/** Parse finding from LLM response safely */
+/** Parse finding from LLM response safely — returns null if invalid */
 export function parseFinding(raw: unknown): Finding | null {
   const result = FindingSchema.safeParse(raw);
   return result.success ? result.data : null;

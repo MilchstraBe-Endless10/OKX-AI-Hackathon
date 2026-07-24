@@ -29,7 +29,7 @@ describe('A2MCP route deadline', () => {
     const response = await responsePromise;
 
     expect(response.statusCode).toBe(504);
-    expect(response.json()).toMatchObject({ code: 'GENERATION_TIMEOUT', retryable: true });
+    expect(response.json()).toMatchObject({ code: 'GATEWAY_TIMEOUT', retryable: true });
     expect(observed.signal?.aborted).toBe(true);
     await app.close();
   });
