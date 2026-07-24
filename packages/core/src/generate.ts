@@ -1,6 +1,7 @@
-// @sopscape/core — orchestration: startGeneration with real LLM provider
-// ponytail: minimal orchestration — LLMProvider for real calls, FakeProvider for tests.
+// @sopscape/core — orchestration: real LLM provider with partial failure handling
+// ponytail: minimal orchestration — LLMProvider with retry/fallback, FakeProvider for tests.
 // Fixed order: 3 specialists parallel → moderator → persist.
+// Partial failure: < 3 specialists → PARTIAL_FAILED, no moderator, no decision nodes.
 
 import {
   CouncilResultSchema,
@@ -16,8 +17,11 @@ export type { CouncilResult };
 
 export interface GenerationResult {
   rehearsalId: string;
+  originalRehearsalId?: string; // preserved from retry
   status: LifecycleState;
   council?: CouncilResult;
+  partialFindings?: Finding[];
+  failedRoles?: Array<'procedure-analyst' | 'risk-challenger' | 'evidence-auditor' | 'moderator'>;
   error?: string;
 }
 
@@ -26,11 +30,20 @@ export interface GenerationOptions {
   signal?: AbortSignal;
   /** LLM config — if omitted, uses FakeProvider (for tests). */
   llm?: LLMConfig;
+  /** Selective retry: already-successful findings to merge with retry results */
+  savedFindings?: Finding[];
+  /** Selective retry: which roles failed and need retrying */
+  failedRoles?: Array<'procedure-analyst' | 'risk-challenger' | 'evidence-auditor'>;
+  /** Override rehearsal ID (used for retry to preserve original ID) */
+  rehearsalId?: string;
 }
 
 export interface GenerationProgress {
   phase: LifecycleState;
 }
+
+const ALL_SPECIALIST_ROLES = ['procedure-analyst', 'risk-challenger', 'evidence-auditor'] as const;
+type Role = (typeof ALL_SPECIALIST_ROLES)[number];
 
 function emit(
   sink: ((e: { phase: LifecycleState }) => void) | undefined,
@@ -48,73 +61,122 @@ function genId(): string {
 /**
  * startGeneration — the Core API entry point.
  * Uses LLMProvider when llm config is provided, FakeProvider otherwise (for tests).
- * Preserves AttemptBudget, AbortSignal, and Schema validation.
+ * Handles partial failure, selective retry, and merge of saved findings.
  */
 export async function startGeneration(
   input: { title: string; content: string; locale?: string },
   options?: GenerationOptions,
 ): Promise<GenerationResult> {
-  const { progressSink, signal, llm } = options ?? {};
+  const {
+    progressSink,
+    signal,
+    llm,
+    savedFindings,
+    failedRoles,
+    rehearsalId: overrideRehearsalId,
+  } = options ?? {};
+  const isRetry = savedFindings !== undefined && savedFindings.length > 0;
 
-  // Check abort before starting
   if (signal?.aborted) {
-    return { rehearsalId: genId(), status: 'CANCELLED', error: 'ABORTED' };
+    return {
+      rehearsalId: overrideRehearsalId ?? genId(),
+      originalRehearsalId: overrideRehearsalId,
+      status: 'CANCELLED',
+      error: 'ABORTED',
+    };
   }
 
-  // Validate input at schema level
   const parsed = SopInputSchema.safeParse(input);
   if (!parsed.success) {
-    return { rehearsalId: genId(), status: 'FAILED', error: 'VALIDATION_ERROR' };
+    return {
+      rehearsalId: overrideRehearsalId ?? genId(),
+      originalRehearsalId: overrideRehearsalId,
+      status: 'FAILED',
+      error: 'VALIDATION_ERROR',
+    };
   }
 
-  const rehearsalId = genId();
+  const rehearsalId = overrideRehearsalId ?? genId();
   const budget = new AttemptBudget({ compression: false });
 
-  // QUEUED
   emit(progressSink, 'QUEUED');
-
-  // SPECIALISTS_RUNNING — 3 parallel
   emit(progressSink, 'SPECIALISTS_RUNNING');
 
-  try {
-    if (llm) {
-      // Real LLM provider path
-      const provider = new LLMProvider(llm);
-      const findings = await provider.runSpecialists(input, budget, signal);
+  let findings: Finding[];
 
-      if (signal?.aborted) {
-        return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
-      }
+  if (isRetry && failedRoles && failedRoles.length > 0 && llm) {
+    // Selective retry: only retry failed specialists, merge with saved findings
+    const retryRoles = ALL_SPECIALIST_ROLES.filter((r) =>
+      (failedRoles as string[]).includes(r),
+    ) as readonly Role[];
 
-      // MODERATING
-      emit(progressSink, 'MODERATING');
+    const provider = new LLMProvider(llm);
+    const { successes, failures } = await provider.runSpecialistsForRoles(
+      retryRoles,
+      input,
+      signal,
+    );
 
-      const moderation = await provider.runModerator(findings, budget, signal);
-      const council: CouncilResult = {
-        consensus: moderation.consensus,
-        disagreements: moderation.disagreements,
-        evidenceGaps: moderation.evidenceGaps,
-        recommendedPath: moderation.recommendedPath,
-        decisionNodes: moderation.decisionNodes,
-      };
-
-      // Validate council result
-      const councilParsed = CouncilResultSchema.safeParse(council);
-      if (!councilParsed.success) {
-        return { rehearsalId, status: 'FAILED', error: 'COUNCIL_VALIDATION_FAILED' };
-      }
-
-      // PERSISTING
-      emit(progressSink, 'PERSISTING');
-
-      // READY
-      emit(progressSink, 'READY');
-
-      return { rehearsalId, status: 'READY', council };
+    if (signal?.aborted) {
+      return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
     }
 
+    // Track budget for successful retries
+    for (const s of successes) {
+      try {
+        budget.startAttempt(s.role);
+      } catch {
+        // budget exceeded but we already have the result
+      }
+    }
+
+    // If retry also fails, return PARTIAL_FAILED with saved findings + remaining failures
+    if (failures.length > 0) {
+      return {
+        rehearsalId,
+        status: 'PARTIAL_FAILED',
+        partialFindings: savedFindings,
+        failedRoles: [...savedFindings.map((f) => f.role), ...failures.map((f) => f.role)],
+        error: `Retry failed for: ${failures.map((f) => f.role).join(', ')}`,
+      };
+    }
+
+    // All retried specialists succeeded — merge with saved findings
+    const merged = [...savedFindings];
+    for (const s of successes) {
+      const idx = merged.findIndex((f) => f.role === s.role);
+      if (idx >= 0) {
+        // Replace old saved finding with new retry result
+        merged[idx] = s.finding;
+      } else {
+        merged.push(s.finding);
+      }
+    }
+    findings = merged;
+  } else if (llm) {
+    // Real LLM provider — full generation with per-specialist retry/fallback
+    const provider = new LLMProvider(llm);
+    const { successes, failures } = await provider.runSpecialists(input, budget, signal);
+
+    if (signal?.aborted) {
+      return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
+    }
+
+    // Partial failure: < 3 valid specialists → PARTIAL_FAILED, no moderator
+    if (successes.length < 3) {
+      return {
+        rehearsalId,
+        status: 'PARTIAL_FAILED',
+        partialFindings: successes.map((s) => s.finding),
+        failedRoles: failures.map((f) => f.role),
+        error: `Specialist(s) failed: ${failures.map((f) => f.role).join(', ')}`,
+      };
+    }
+
+    findings = successes.map((s) => s.finding);
+  } else {
     // FakeProvider path (for tests — no LLM config)
-    const roles = ['procedure-analyst', 'risk-challenger', 'evidence-auditor'] as const;
+    const roles = ALL_SPECIALIST_ROLES;
 
     const specialists = await Promise.all(
       roles.map(async (role) => {
@@ -130,17 +192,33 @@ export async function startGeneration(
       return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
     }
 
-    // MODERATING
-    emit(progressSink, 'MODERATING');
+    findings = specialists.map((s) => s.finding);
+  }
 
-    try {
-      budget.startAttempt('moderator');
-    } catch {
-      return { rehearsalId, status: 'FAILED', error: 'BUDGET_EXCEEDED' };
+  // All 3 findings available → proceed to moderator
+  emit(progressSink, 'MODERATING');
+
+  try {
+    budget.startAttempt('moderator');
+  } catch {
+    return { rehearsalId, status: 'FAILED', error: 'BUDGET_EXCEEDED' };
+  }
+
+  let council: CouncilResult | null = null;
+
+  if (llm) {
+    const provider = new LLMProvider(llm);
+    const findingsMap: Record<Role, Finding> = {} as Record<Role, Finding>;
+    for (const f of findings) {
+      if (ALL_SPECIALIST_ROLES.includes(f.role as Role)) {
+        findingsMap[f.role as Role] = f;
+      }
     }
-
-    const council: CouncilResult = {
-      consensus: specialists.map((s) => s.finding),
+    council = await provider.runModerator(findingsMap, budget, signal);
+  } else {
+    // Fake provider council
+    council = {
+      consensus: findings,
       disagreements: [],
       evidenceGaps: [],
       recommendedPath: ['verify', 'report'],
@@ -155,27 +233,34 @@ export async function startGeneration(
         },
       ],
     };
+  }
 
-    // Validate council result
-    const councilParsed = CouncilResultSchema.safeParse(council);
-    if (!councilParsed.success) {
-      return { rehearsalId, status: 'FAILED', error: 'COUNCIL_VALIDATION_FAILED' };
-    }
-
-    // PERSISTING
-    emit(progressSink, 'PERSISTING');
-
-    // READY
-    emit(progressSink, 'READY');
-
-    return { rehearsalId, status: 'READY', council };
-  } catch (error) {
+  if (!council) {
     return {
       rehearsalId,
-      status: 'FAILED',
-      error: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
+      status: 'PARTIAL_FAILED',
+      partialFindings: findings,
+      failedRoles: ['moderator'],
+      error: 'Moderator failed to produce valid council result',
     };
   }
+
+  // Validate council result
+  const councilParsed = CouncilResultSchema.safeParse(council);
+  if (!councilParsed.success) {
+    return {
+      rehearsalId,
+      status: 'PARTIAL_FAILED',
+      partialFindings: findings,
+      failedRoles: ['moderator'],
+      error: 'Moderator result validation failed',
+    };
+  }
+
+  emit(progressSink, 'PERSISTING');
+  emit(progressSink, 'READY');
+
+  return { rehearsalId, status: 'READY', council: councilParsed.data };
 }
 
 function makeFixtureFinding(role: string, title: string): Finding {

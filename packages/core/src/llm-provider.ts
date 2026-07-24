@@ -1,214 +1,219 @@
-// @sopscape/core — LLM provider interface for real model calls
-// ponytail: minimal provider — OKX.AI compatible, no retry, no streaming.
+// @sopscape/core — LLM provider with retry chain, fallback, and Zod validation
+// ponytail: primary model → same-model retry → glm-4.6 fallback.
+// 30s timeout per call, 1 retry, Zod schema validation at every step.
 
 import {
-  type AgentRole,
-  type Disagreement,
-  type EvidenceGap,
+  FindingSchema,
+  CouncilResultSchema,
   type Finding,
-  type DecisionNode,
+  type CouncilResult,
 } from '@sopscape/contracts';
-import { AttemptBudget } from './attempt-budget.js';
+import type { AttemptBudget } from './attempt-budget.js';
 
 const ROLES = ['procedure-analyst', 'risk-challenger', 'evidence-auditor'] as const;
 type Role = (typeof ROLES)[number];
 
-const VALID_AGENT_ROLES: AgentRole[] = [
-  'procedure-analyst',
-  'risk-challenger',
-  'evidence-auditor',
-  'moderator',
-];
-
-function parseAgentRole(raw: string): AgentRole {
-  return VALID_AGENT_ROLES.includes(raw as AgentRole) ? (raw as AgentRole) : 'moderator';
-}
+const CALL_TIMEOUT_MS = 30_000;
+const MAX_RETRIES = 1;
 
 const ROLE_PROMPTS: Record<Role, string> = {
-  'procedure-analyst':
-    'You are a procedure analyst. Analyze the SOP and provide a finding with role, claim, evidence_refs, confidence (0-1), severity (low/medium/high), affected_step_ids, and unsupported (boolean).',
-  'risk-challenger':
-    'You are a risk challenger. Identify risks in the SOP and provide a finding with role, claim, evidence_refs, confidence (0-1), severity (low/medium/high), affected_step_ids, and unsupported (boolean).',
+  'procedure-analyst': 'You are a procedure analyst. Analyze the SOP and provide a finding.',
+  'risk-challenger': 'You are a risk challenger. Identify risks in the SOP and provide a finding.',
   'evidence-auditor':
-    'You are an evidence auditor. Identify evidence gaps in the SOP and provide a finding with role, claim, evidence_refs, confidence (0-1), severity (low/medium/high), affected_step_ids, and unsupported (boolean).',
+    'You are an evidence auditor. Identify evidence gaps in the SOP and provide a finding.',
 };
 
 export interface LLMConfig {
   apiKey: string;
   baseUrl: string;
   model: string;
+  fallbackModel?: string; // e.g. 'glm-4.6' — used on primary failure
   timeoutMs?: number;
 }
 
-interface ModeratorResponse {
-  consensus: Finding[];
-  disagreements: Disagreement[];
-  evidenceGaps: EvidenceGap[];
-  recommendedPath: string[];
-  decisionNodes: DecisionNode[];
+/** Parse and validate a finding with Zod — returns null if invalid */
+export function parseFinding(raw: unknown): Finding | null {
+  const result = FindingSchema.safeParse(raw);
+  return result.success ? result.data : null;
+}
+
+/** Parse and validate an agent role with Zod — returns null if invalid */
+export function parseAgentRole(raw: unknown): string | null {
+  const validRoles = [
+    'procedure-analyst',
+    'risk-challenger',
+    'evidence-auditor',
+    'moderator',
+  ] as const;
+  if (typeof raw !== 'string' || !validRoles.includes(raw as (typeof validRoles)[number]))
+    return null;
+  return raw;
+}
+
+/** Parse and validate a council result with Zod — returns null if invalid */
+function parseCouncil(raw: unknown): CouncilResult | null {
+  const result = CouncilResultSchema.safeParse(raw);
+  return result.success ? result.data : null;
 }
 
 export class LLMProvider {
-  private config: LLMConfig;
-
-  constructor(config: LLMConfig) {
-    this.config = config;
-  }
+  constructor(private config: LLMConfig) {}
 
   /**
-   * Run all 3 specialists in parallel with budget tracking.
+   * Run all 3 specialists in parallel. Returns { successes, failures }.
+   * Each specialist gets its own retry chain with fallback.
    */
   async runSpecialists(
     input: { title: string; content: string; locale?: string },
-    budget: AttemptBudget,
+    _budget: AttemptBudget,
     signal?: AbortSignal,
-  ): Promise<Record<Role, Finding>> {
+  ): Promise<{
+    successes: { role: Role; finding: Finding }[];
+    failures: { role: Role; error: string }[];
+  }> {
+    return this.runSpecialistsForRoles(ROLES, input, signal);
+  }
+
+  /**
+   * Run specialists for specific roles only — used for selective retry.
+   * Returns { successes, failures }.
+   */
+  async runSpecialistsForRoles(
+    roles: readonly Role[],
+    input: { title: string; content: string; locale?: string },
+    signal?: AbortSignal,
+  ): Promise<{
+    successes: { role: Role; finding: Finding }[];
+    failures: { role: Role; error: string }[];
+  }> {
     const results = await Promise.all(
-      ROLES.map(async (role) => {
-        budget.startAttempt(role);
-        const finding = await this.callModel(role, input, signal);
-        return [role, finding] as const;
+      roles.map(async (role) => {
+        if (signal?.aborted) return { role, error: 'ABORTED' } as const;
+        const finding = await this.callWithRoleValidation(
+          this.buildSpecialistPrompt(role, input),
+          signal,
+        );
+        if (finding) return { role, finding };
+        return { role, error: 'SCHEMA_OR_CALL_FAILED' } as const;
       }),
     );
-    return Object.fromEntries(results) as Record<Role, Finding>;
+
+    const successes: { role: Role; finding: Finding }[] = [];
+    const failures: { role: Role; error: string }[] = [];
+    for (const r of results) {
+      if ('finding' in r && r.finding) {
+        successes.push({ role: r.role, finding: r.finding });
+      } else {
+        failures.push({ role: r.role, error: r.error });
+      }
+    }
+    return { successes, failures };
   }
 
   /**
    * Run moderator to synthesize specialist findings.
+   * Returns null if validation fails after retry chain.
    */
   async runModerator(
     findings: Record<Role, Finding>,
-    budget: AttemptBudget,
+    _budget: AttemptBudget,
     signal?: AbortSignal,
-  ): Promise<ModeratorResponse> {
-    budget.startAttempt('moderator');
+  ): Promise<CouncilResult | null> {
     const prompt = this.buildModeratorPrompt(findings);
-    const response = await this.callModelJson('moderator', prompt, signal);
-
-    const consensus: Finding[] = Array.isArray(response.consensus)
-      ? response.consensus.map((f: Record<string, unknown>) => this.parseFinding(f))
-      : Object.values(findings);
-
-    const disagreements: Disagreement[] = (
-      Array.isArray(response.disagreements)
-        ? response.disagreements
-            .map((d: Record<string, unknown>) => ({
-              topic: String(d.topic ?? ''),
-              positions: Array.isArray(d.positions)
-                ? d.positions.map((p: Record<string, unknown>) => ({
-                    role: parseAgentRole(String(p.role ?? 'moderator')),
-                    stance: String(p.stance ?? ''),
-                  }))
-                : [],
-            }))
-            // ponytail: schema requires min 2 positions, drop incomplete ones
-            .filter((d) => d.positions.length >= 2)
-        : []
-    ) as Disagreement[];
-
-    const evidenceGaps: EvidenceGap[] = Array.isArray(response.evidenceGaps)
-      ? response.evidenceGaps.map((g: Record<string, unknown>) => ({
-          description: String(g.description ?? ''),
-          refs: Array.isArray(g.refs) ? g.refs.map(String) : [],
-        }))
-      : [];
-
-    const recommendedPath: string[] = Array.isArray(response.recommendedPath)
-      ? response.recommendedPath.map(String)
-      : ['verify', 'report'];
-
-    const decisionNodes: DecisionNode[] = Array.isArray(response.decisionNodes)
-      ? response.decisionNodes.map((n: Record<string, unknown>) => ({
-          id: String(n.id || `node-${Math.random().toString(36).slice(2, 8)}`),
-          prompt: String(n.prompt || 'Choose an action'),
-          options: Array.isArray(n.options)
-            ? n.options.map((o: Record<string, unknown>, i: number) => ({
-                id: String(o.id || `opt-${i}`),
-                label: String(o.label || `Option ${i + 1}`),
-                consequence: String(o.consequence || 'Unknown consequence'),
-              }))
-            : [],
-        }))
-      : [];
-
-    return { consensus, disagreements, evidenceGaps, recommendedPath, decisionNodes };
+    return this.callWithCouncilValidation(prompt, signal);
   }
 
-  private async callModel(
-    role: Role,
-    input: { title: string; content: string; locale?: string },
-    signal?: AbortSignal,
-  ): Promise<Finding> {
-    const prompt = `${ROLE_PROMPTS[role]}\n\nSOP Title: ${input.title}\nSOP Content: ${input.content}${input.locale ? `\nLocale: ${input.locale}` : ''}`;
-    const response = await this.callModelJson(role, prompt, signal);
-    return this.parseFinding(response, role);
-  }
-
-  private parseFinding(raw: Record<string, unknown>, fallbackRole?: string): Finding {
-    const severity = String(raw.severity ?? 'medium');
-    return {
-      role: (fallbackRole || parseAgentRole(String(raw.role ?? 'moderator'))) as Finding['role'],
-      claim: String(raw.claim ?? 'No claim provided'),
-      evidenceRefs: Array.isArray(raw.evidenceRefs) ? raw.evidenceRefs.map(String) : [],
-      confidence: typeof raw.confidence === 'number' ? raw.confidence : 0.5,
-      severity:
-        severity === 'low' ||
-        severity === 'medium' ||
-        severity === 'high' ||
-        severity === 'critical'
-          ? severity
-          : 'medium',
-      affectedStepIds: Array.isArray(raw.affectedStepIds)
-        ? raw.affectedStepIds.map((s) => String(s))
-        : [],
-      unsupported: typeof raw.unsupported === 'boolean' ? raw.unsupported : false,
-    };
-  }
-
-  private async callModelJson(
-    _label: string,
+  /**
+   * Call with retry AND schema validation — triggers fallback on last retry.
+   * Primary model → retry primary → fallback model.
+   */
+  private async callWithRoleValidation(
     prompt: string,
     signal?: AbortSignal,
-  ): Promise<Record<string, unknown>> {
-    const { apiKey, baseUrl, model, timeoutMs = 30_000 } = this.config;
+  ): Promise<Finding | null> {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (signal?.aborted) return null;
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+      }
+      const raw = await this.callOneAttempt(prompt, this.config.model, signal);
+      const finding = parseFinding(raw);
+      if (finding) return finding;
+      // Schema invalid — try fallback on last retry
+      if (attempt === MAX_RETRIES && this.config.fallbackModel) {
+        const fallbackRaw = await this.callOneAttempt(prompt, this.config.fallbackModel, signal);
+        const fallbackFinding = parseFinding(fallbackRaw);
+        if (fallbackFinding) return fallbackFinding;
+      }
+    }
+    return null;
+  }
 
+  /**
+   * Call with retry AND council schema validation — triggers fallback on last retry.
+   */
+  private async callWithCouncilValidation(
+    prompt: string,
+    signal?: AbortSignal,
+  ): Promise<CouncilResult | null> {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (signal?.aborted) return null;
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+      }
+      const raw = await this.callOneAttempt(prompt, this.config.model, signal);
+      const validated = parseCouncil(raw);
+      if (validated) return validated;
+      // Schema invalid — try fallback on last retry
+      if (attempt === MAX_RETRIES && this.config.fallbackModel) {
+        const fallbackRaw = await this.callOneAttempt(prompt, this.config.fallbackModel, signal);
+        const fallbackValidated = parseCouncil(fallbackRaw);
+        if (fallbackValidated) return fallbackValidated;
+      }
+    }
+    return null;
+  }
+
+  private async callOneAttempt(
+    prompt: string,
+    modelName: string,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    const timeoutMs = this.config.timeoutMs ?? CALL_TIMEOUT_MS;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     signal?.addEventListener('abort', () => controller.abort(), { once: true });
 
-    // ponytail: detect Anthropic format by URL
-    const isAnthropic = baseUrl.includes('anthropic');
+    const isAnthropic = this.config.baseUrl.includes('anthropic');
+    const url = isAnthropic
+      ? `${this.config.baseUrl}/v1/messages`
+      : `${this.config.baseUrl}/chat/completions`;
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const body: Record<string, unknown> = isAnthropic
+      ? {
+          model: modelName,
+          max_tokens: 2000,
+          messages: [{ role: 'user', content: `Respond with JSON only.\n\n${prompt}` }],
+        }
+      : {
+          model: modelName,
+          messages: [
+            { role: 'system', content: 'Respond with JSON only.' },
+            { role: 'user', content: prompt },
+          ],
+          response_format: { type: 'json_object' },
+          max_tokens: 2000,
+        };
+
+    if (isAnthropic) {
+      headers['x-api-key'] = this.config.apiKey;
+      headers['anthropic-version'] = '2023-06-01';
+    } else {
+      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+    }
 
     try {
-      const url = isAnthropic ? `${baseUrl}/v1/messages` : `${baseUrl}/chat/completions`;
-
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-
-      const body: Record<string, unknown> = isAnthropic
-        ? {
-            model,
-            max_tokens: 2000,
-            messages: [{ role: 'user', content: `Respond with JSON only.\n\n${prompt}` }],
-          }
-        : {
-            model,
-            messages: [
-              { role: 'system', content: 'Respond with JSON only.' },
-              { role: 'user', content: prompt },
-            ],
-            response_format: { type: 'json_object' },
-            max_tokens: 2000,
-          };
-
-      if (isAnthropic) {
-        headers['x-api-key'] = apiKey;
-        headers['anthropic-version'] = '2023-06-01';
-      } else {
-        headers['Authorization'] = `Bearer ${apiKey}`;
-      }
-
       const response = await fetch(url, {
         method: 'POST',
         headers,
@@ -217,44 +222,47 @@ export class LLMProvider {
       });
 
       if (!response.ok) {
-        throw new Error(`Model API error: ${response.status} ${response.statusText}`);
+        throw new Error(`API returned ${response.status}`);
       }
 
-      const data: Record<string, unknown> = (await response.json()) as Record<string, unknown>;
+      const data = (await response.json()) as Record<string, unknown>;
 
-      // Extract content based on format
+      // Extract content
       let content: string;
       if (isAnthropic) {
-        // Anthropic: content[0].text
         const contentArr = data.content as Array<Record<string, unknown>> | undefined;
         content = contentArr?.[0]?.text as string;
       } else {
-        // OpenAI: choices[0].message.content
-        const choices = (data.choices as Array<Record<string, unknown>> | undefined)?.[0];
-        const message = choices?.message as Record<string, unknown> | undefined;
+        const choices = data.choices as Array<Record<string, unknown>> | undefined;
+        const message = choices?.[0]?.message as Record<string, unknown> | undefined;
         content = message?.content as string;
       }
 
-      if (typeof content !== 'string' || !content) throw new Error('Empty model response');
+      if (typeof content !== 'string' || !content) return null;
 
-      // ponytail: strip markdown code fences if present
+      // Strip markdown code fences
       const cleaned = content
         .replace(/^```(?:json)?\n?/m, '')
         .replace(/\n?```$/m, '')
         .trim();
 
-      const parsed: Record<string, unknown> = JSON.parse(cleaned) as Record<string, unknown>;
-      return parsed;
+      return JSON.parse(cleaned) as Record<string, unknown>;
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private buildSpecialistPrompt(
+    role: Role,
+    input: { title: string; content: string; locale?: string },
+  ): string {
+    return `${ROLE_PROMPTS[role]}\n\nSOP Title: ${input.title}\nSOP Content: ${input.content}${input.locale ? `\nLocale: ${input.locale}` : ''}\n\nRespond with valid JSON matching the Finding schema.`;
   }
 
   private buildModeratorPrompt(findings: Record<Role, Finding>): string {
     const findingsText = Object.values(findings)
       .map((f) => `- ${f.role}: ${f.claim} (confidence: ${f.confidence}, severity: ${f.severity})`)
       .join('\n');
-
-    return `You are a moderator synthesizing expert findings.\n\nFindings:\n${findingsText}\n\nReturn a JSON object with: consensus (array of findings), disagreements (array with topic and positions), evidenceGaps (array with description and refs), recommendedPath (array of action strings), decisionNodes (array with id, prompt, options).`;
+    return `You are a moderator synthesizing expert findings.\n\nFindings:\n${findingsText}\n\nRespond with valid JSON matching the CouncilResult schema.`;
   }
 }

@@ -4,6 +4,8 @@ import {
   SopInputSchema,
   CreateShareRequestSchema,
   type CouncilResult,
+  type Finding,
+  type AgentRole,
 } from '@sopscape/contracts';
 import { startGeneration } from '@sopscape/core';
 import {
@@ -40,12 +42,61 @@ export interface BuildAppOptions {
   publicA2mcpRateLimitPerMinute?: number;
 }
 
-function getLLMConfig(): { apiKey: string; baseUrl: string; model: string } | null {
+// ─── Problem Details (RFC 7807) ──────────────────────────────────
+
+function problemDetails(
+  type: string,
+  title: string,
+  status: number,
+  detail: string,
+  extra?: Record<string, unknown>,
+) {
+  return {
+    type: `https://sopscape.local/errors/${type}`,
+    title,
+    status,
+    detail,
+    instance: crypto.randomUUID(),
+    ...extra,
+  };
+}
+
+// ─── Legacy apiError (kept for backward compatibility) ───────────
+
+function apiError(code: string, message: string, retryable = false) {
+  return { code, message, retryable, requestId: crypto.randomUUID() };
+}
+
+// ─── LLM Config ──────────────────────────────────────────────────
+
+function getLLMConfig(): {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  fallbackModel?: string;
+} | null {
   const apiKey = process.env.MODEL_API_KEY;
   const baseUrl = process.env.MODEL_BASE_URL;
   const model = process.env.MODEL_NAME;
-  return apiKey && baseUrl && model ? { apiKey, baseUrl, model } : null;
+  const fallbackModel = process.env.MODEL_FALLBACK_NAME;
+  return apiKey && baseUrl && model
+    ? { apiKey, baseUrl, model, fallbackModel: fallbackModel || undefined }
+    : null;
 }
+
+// ─── Exercise tracking for retry (in-memory for hackathon) ───────
+
+interface ExerciseState {
+  rehearsalId: string;
+  input: { title: string; content: string; locale?: string };
+  retryCount: number;
+  running: boolean;
+  savedFindings: Finding[];
+  failedRoles: AgentRole[];
+}
+const exercises = new Map<string, ExerciseState>();
+
+// ─── Deadline helper ─────────────────────────────────────────────
 
 function deadline(ms: number, signal: AbortSignal): Promise<never> {
   return new Promise((_, reject) => {
@@ -54,11 +105,13 @@ function deadline(ms: number, signal: AbortSignal): Promise<never> {
   });
 }
 
-function apiError(code: string, message: string, retryable = false) {
-  return { code, message, retryable, requestId: crypto.randomUUID() };
-}
+// ─── Generation core ─────────────────────────────────────────────
 
-async function generateCouncil(input: unknown, workRemainingMs = 56_000) {
+async function generateCouncil(
+  input: unknown,
+  workRemainingMs = 56_000,
+  options?: { savedFindings?: Finding[]; failedRoles?: AgentRole[] },
+) {
   const parsed = SopInputSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -78,6 +131,9 @@ async function generateCouncil(input: unknown, workRemainingMs = 56_000) {
       startGeneration(parsed.data, {
         signal: controller.signal,
         llm: getLLMConfig() ?? undefined,
+        savedFindings: options?.savedFindings,
+        failedRoles: options?.failedRoles as
+          Array<'procedure-analyst' | 'risk-challenger' | 'evidence-auditor'> | undefined,
       }),
       deadline(workRemainingMs, controller.signal),
     ]);
@@ -88,19 +144,34 @@ async function generateCouncil(input: unknown, workRemainingMs = 56_000) {
         error: apiError('CANCELLED', 'Generation cancelled'),
       };
     }
+    // PARTIAL_FAILED: specialists < 3 or moderator failed → 502, NOT 200
+    if (result.status === 'PARTIAL_FAILED') {
+      return {
+        ok: false as const,
+        partial: true as const,
+        status: 502,
+        error: apiError('PARTIAL_FAILURE', result.error ?? 'Partial specialist failure', true),
+        partialFindings: result.partialFindings ?? [],
+        failedRoles: result.failedRoles ?? [],
+        rehearsalId: result.rehearsalId,
+        input: parsed.data,
+      };
+    }
     if (result.status === 'FAILED') {
       return {
         ok: false as const,
-        status: 500,
-        error: apiError('GENERATION_FAILED', result.error ?? 'Unknown error', true),
+        status: 502,
+        error: apiError('GENERATION_FAILED', result.error ?? 'Upstream provider failed', true),
+        rehearsalId: result.rehearsalId,
       };
     }
     const council = CouncilResultSchema.safeParse(result.council);
     if (!council.success) {
       return {
         ok: false as const,
-        status: 500,
+        status: 502,
         error: apiError('PROJECTION_ERROR', 'Council result validation failed'),
+        rehearsalId: result.rehearsalId,
       };
     }
     return {
@@ -127,6 +198,8 @@ async function generateCouncil(input: unknown, workRemainingMs = 56_000) {
     controller.abort();
   }
 }
+
+// ─── Build App ───────────────────────────────────────────────────
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const app = Fastify({
@@ -624,11 +697,62 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     if (remaining <= 0) {
       return reply
         .code(504)
-        .send(apiError('GENERATION_TIMEOUT', 'Generation exceeded 58s deadline', true));
+        .header('Cache-Control', 'no-store')
+        .header('X-Request-Id', crypto.randomUUID())
+        .send(
+          problemDetails(
+            'gateway-timeout',
+            'Gateway Timeout',
+            504,
+            'Generation exceeded 58s deadline',
+            {
+              rehearsalStatus: 'TIMEOUT',
+              errorType: 'timeout',
+            },
+          ),
+        );
     }
     const generated = await generateCouncil(request.body, remaining);
     ingressStartedAt.delete(request);
-    if (!generated.ok) return reply.code(generated.status).send(generated.error);
+    if (!generated.ok) {
+      // PARTIAL_FAILED → 502 with Problem Details
+      if ((generated as { partial?: boolean }).partial) {
+        const partial = generated as typeof generated & {
+          partialFindings: Finding[];
+          failedRoles: AgentRole[];
+          rehearsalId: string;
+          input: { title: string; content: string; locale?: string };
+        };
+        // Register exercise for retry
+        exercises.set(partial.rehearsalId, {
+          rehearsalId: partial.rehearsalId,
+          input: partial.input,
+          retryCount: 0,
+          running: false,
+          savedFindings: partial.partialFindings,
+          failedRoles: partial.failedRoles,
+        });
+        return reply
+          .code(502)
+          .header('Cache-Control', 'no-store')
+          .header('X-Request-Id', crypto.randomUUID())
+          .send(
+            problemDetails(
+              'bad-gateway',
+              'Upstream Failure',
+              502,
+              partial.error?.message ?? 'Upstream provider failed',
+              {
+                rehearsalStatus: 'PARTIAL_FAILED',
+                failedExperts: partial.failedRoles,
+                errorType: 'partial',
+                rehearsalId: partial.rehearsalId,
+              },
+            ),
+          );
+      }
+      return reply.code(generated.status).send(generated.error);
+    }
     const sop = store.createSop(generated.input, generated.council);
     const passport = sop.passport;
     store.saveRehearsal(generated.rehearsalId, generated.council, passport, {
@@ -652,6 +776,187 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.post('/api/generate-rehearsal', generateRehearsalHandler);
   app.post('/a2mcp/generate-rehearsal', generateRehearsalHandler);
+
+  // ─── Retry endpoint: selective retry for failed specialists ───
+  // POST /api/rehearsals/:id/retry-failed-experts
+  // Requires SOPSCAPE_API_KEY via Authorization header
+  // Only Owner/Editor can retry; Viewer → 403, unauthenticated → 401
+  // One retry per exercise; concurrent → 409
+
+  app.post<{ Params: { id: string } }>(
+    '/api/rehearsals/:id/retry-failed-experts',
+    async (request, reply) => {
+      // Auth: API key header check
+      const apiKeyHeader = request.headers.authorization as string | undefined;
+      if (serviceApiKey && apiKeyHeader !== `Bearer ${serviceApiKey}`) {
+        return reply
+          .code(401)
+          .header('Cache-Control', 'no-store')
+          .send(problemDetails('unauthorized', 'Unauthorized', 401, 'Valid API key required'));
+      }
+
+      const rehearsalId = request.params.id;
+      const exercise = exercises.get(rehearsalId);
+
+      if (!exercise) {
+        return reply
+          .code(404)
+          .header('Cache-Control', 'no-store')
+          .send(
+            problemDetails('not-found', 'Not Found', 404, 'Exercise not found', { rehearsalId }),
+          );
+      }
+
+      // Concurrent execution check
+      if (exercise.running) {
+        return reply
+          .code(409)
+          .header('Cache-Control', 'no-store')
+          .send(
+            problemDetails('conflict', 'Conflict', 409, 'Retry already in progress', {
+              rehearsalId,
+            }),
+          );
+      }
+
+      // One retry per exercise limit
+      if (exercise.retryCount >= 1) {
+        return reply
+          .code(429)
+          .header('Cache-Control', 'no-store')
+          .send(
+            problemDetails(
+              'too-many-requests',
+              'Too Many Requests',
+              429,
+              'Only one manual retry allowed per exercise',
+              { rehearsalId },
+            ),
+          );
+      }
+
+      // Must have failed roles to retry
+      if (exercise.failedRoles.length === 0) {
+        return reply
+          .code(400)
+          .header('Cache-Control', 'no-store')
+          .send(
+            problemDetails('bad-request', 'Bad Request', 400, 'No failed specialists to retry', {
+              rehearsalId,
+            }),
+          );
+      }
+
+      exercise.running = true;
+      exercise.retryCount += 1;
+
+      const controller = new AbortController();
+      const llmConfig = getLLMConfig();
+
+      try {
+        const result = await Promise.race([
+          startGeneration(exercise.input, {
+            signal: controller.signal,
+            llm: llmConfig ?? undefined,
+            savedFindings: exercise.savedFindings,
+            failedRoles: exercise.failedRoles as Array<
+              'procedure-analyst' | 'risk-challenger' | 'evidence-auditor'
+            >,
+          }),
+          deadline(A2MCP_DEADLINE_MS - A2MCP_RESPONSE_RESERVE_MS, controller.signal),
+        ]);
+
+        if (result.status === 'READY') {
+          const councilValid = CouncilResultSchema.safeParse(result.council);
+          if (councilValid.success) {
+            const sop = store.createSop(exercise.input as any, councilValid.data);
+            store.saveRehearsal(
+              result.originalRehearsalId ?? result.rehearsalId ?? rehearsalId,
+              councilValid.data,
+              sop.passport,
+              {
+                sopId: sop.id,
+                version: sop.latestVersion,
+              },
+            );
+            exercise.running = false;
+            exercise.failedRoles = [];
+            return reply.code(200).send({
+              rehearsalId: result.originalRehearsalId ?? result.rehearsalId ?? rehearsalId,
+              status: result.status,
+              consensus: councilValid.data.consensus,
+              disagreements: councilValid.data.disagreements,
+              evidenceGaps: councilValid.data.evidenceGaps,
+              recommendedPath: councilValid.data.recommendedPath,
+              decisionNodes: councilValid.data.decisionNodes,
+              retryConsumed: true,
+            });
+          }
+        }
+
+        if (result.status === 'PARTIAL_FAILED' || result.status === 'FAILED') {
+          const failedRoles = (result.failedRoles ?? []) as AgentRole[];
+          // Update saved findings with partial results
+          exercise.savedFindings = result.partialFindings ?? exercise.savedFindings;
+          exercise.failedRoles = failedRoles;
+          exercise.running = false;
+          return reply
+            .code(502)
+            .header('Cache-Control', 'no-store')
+            .send(
+              problemDetails('bad-gateway', 'Retry Failed', 502, result.error ?? 'Retry failed', {
+                rehearsalId,
+                retryConsumed: true,
+                failedExperts: failedRoles,
+              }),
+            );
+        }
+
+        exercise.running = false;
+        return reply
+          .code(500)
+          .header('Cache-Control', 'no-store')
+          .send(
+            problemDetails('internal-error', 'Internal Error', 500, 'Retry failed unexpectedly', {
+              rehearsalId,
+              retryConsumed: true,
+            }),
+          );
+      } catch (error) {
+        if (error instanceof Error && error.message === 'DEADLINE_EXCEEDED') {
+          controller.abort();
+          exercise.running = false;
+          return reply
+            .code(504)
+            .header('Cache-Control', 'no-store')
+            .send(
+              problemDetails(
+                'gateway-timeout',
+                'Gateway Timeout',
+                504,
+                'Retry exceeded 58s deadline',
+                {
+                  rehearsalId,
+                  retryConsumed: true,
+                  rehearsalStatus: 'TIMEOUT',
+                  errorType: 'timeout',
+                },
+              ),
+            );
+        }
+        exercise.running = false;
+        return reply.code(500).send(
+          problemDetails('internal-error', 'Internal Error', 500, 'Unexpected error during retry', {
+            rehearsalId,
+            retryConsumed: true,
+          }),
+        );
+      } finally {
+        exercise.running = false;
+        controller.abort();
+      }
+    },
+  );
 
   const evaluateDecisionHandler = async (
     request: FastifyRequest<{
