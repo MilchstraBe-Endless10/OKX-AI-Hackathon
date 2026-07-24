@@ -61,7 +61,8 @@ export default function CommandRoom({
       // ponytail: no WebGL — show fallback, don't crash the whole app
       const fallback = document.createElement('div');
       fallback.textContent = '3D 场景需要 WebGL 支持';
-      fallback.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:14px;';
+      fallback.style.cssText =
+        'display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:14px;';
       mount.appendChild(fallback);
       return;
     }
