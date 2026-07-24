@@ -336,7 +336,7 @@ export default function CommandRoom({
   return (
     <div className="command-room-viewport">
       <div ref={handleMount} className="command-room-canvas" />
-      <div className="orbit-controls" aria-label={orbitLabel}>
+      <div className="orbit-controls" role="group" aria-label={orbitLabel}>
         <span>{orbitLabel}</span>
         <button type="button" onClick={() => resetCameraRef.current?.()}>
           {resetLabel}

@@ -92,10 +92,10 @@ export default function TeamManagement({
   const isOwner = currentMemberRole === 'owner';
 
   return (
-    <div className="team-overlay" role="dialog" aria-modal="true">
+    <div className="team-overlay" role="dialog" aria-modal="true" aria-labelledby="team-title">
       <div className="team-card">
         <span>TEAM · 团队管理</span>
-        <h2>成员与邀请</h2>
+        <h2 id="team-title">成员与邀请</h2>
         <p>管理团队成员和邀请链接。</p>
 
         {error && <div className="product-alert">{error}</div>}

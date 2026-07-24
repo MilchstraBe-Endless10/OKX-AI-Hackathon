@@ -267,7 +267,7 @@ export default function App() {
       )}
       <div ref={shellRef} className="app-shell">
         <div className="app-rail" role="navigation" aria-label={messages.commandRoom}>
-          <div className="brand-mark" aria-label="SOPscape Council" />
+          <div className="brand-mark" role="img" aria-label="SOPscape Council" />
           <nav className="rail-nav">
             {(
               [
@@ -298,7 +298,7 @@ export default function App() {
               <strong>SOPscape Council</strong>
               <span>TRACEABLE AI DECISION REHEARSAL</span>
             </div>
-            <div className="phase-line" aria-label="当前演练进度">
+            <div className="phase-line" role="status" aria-label="当前演练进度">
               <span className="live-dot" />
               <span>
                 {phase === 'idle'

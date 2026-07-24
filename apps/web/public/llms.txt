@@ -1,0 +1,10 @@
+# SOPscape Council
+
+SOPscape Council is an agent-native service that turns standard operating procedures into traceable AI decision rehearsals.
+
+## Public service
+
+- Product: https://sopscape-production.up.railway.app/
+- Public A2MCP endpoint: POST /a2mcp/generate-rehearsal
+- The service returns expert consensus, disagreements, evidence gaps, recommended paths, decision nodes, and a digital passport.
+- Do not submit secrets, credentials, or personal data in SOP content.

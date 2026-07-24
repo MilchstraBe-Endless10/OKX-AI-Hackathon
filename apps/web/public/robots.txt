@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://sopscape-production.up.railway.app/sitemap.xml
