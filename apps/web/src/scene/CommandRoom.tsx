@@ -1,8 +1,9 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useState } from 'react';
 import * as THREE from 'three';
 import type { Scene } from '@sopscape/contracts';
 import type { UIPhase } from '../lib/api';
 import { getDecisionVisual, getQualityProfile } from './render-loop';
+import { getPerformanceMonitor, type PerformanceMetrics } from '../lib/performance';
 
 interface CommandRoomProps {
   phase: UIPhase;
@@ -23,6 +24,8 @@ export default function CommandRoom({
   const phaseRef = useRef(phase);
   const decisionRef = useRef(decisionChoice);
   const viewRef = useRef(view);
+  const [perfMetrics, setPerfMetrics] = useState<PerformanceMetrics | null>(null);
+  const monitorRef = useRef(getPerformanceMonitor());
 
   useEffect(() => {
     phaseRef.current = phase;
@@ -161,6 +164,9 @@ export default function CommandRoom({
     const renderFrame = () => {
       time += 0.008;
 
+      // Record frame time for performance monitoring
+      monitorRef.current.recordFrame();
+
       // Rotate expert nodes
       expertMeshes.forEach((mesh, i) => {
         mesh.rotation.x = time * (0.3 + i * 0.1);
@@ -232,9 +238,17 @@ export default function CommandRoom({
     };
     document.addEventListener('visibilitychange', handleVisibility);
 
+    // Performance metrics update — every 1 second
+    const perfUpdate = setInterval(() => {
+      if (!document.hidden) {
+        setPerfMetrics(monitorRef.current.getMetrics());
+      }
+    }, 1000);
+
     return () => {
       resizeObserver.disconnect();
       document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(perfUpdate);
       renderer.setAnimationLoop(null);
       renderer.dispose();
       expertGeo.dispose();
@@ -252,6 +266,34 @@ export default function CommandRoom({
       }
     };
   }, [sceneData]);
+
+  // Performance overlay in development
+  if (perfMetrics && process.env.NODE_ENV === 'development') {
+    const target = perfMetrics.isDesktop ? { median: 55, low1p: 45 } : { median: 45, low1p: 35 };
+
+    return (
+      <div className="relative w-full h-full" style={{ zIndex: 0 }}>
+        <div ref={handleMount} className="w-full h-full" />
+        <div
+          className="absolute top-2 right-2 bg-black/80 text-white text-xs p-2 rounded font-mono"
+          style={{ zIndex: 1000 }}
+        >
+          <div className="font-bold mb-1">Performance Monitor</div>
+          <div>FPS: {perfMetrics.fps.toFixed(1)}</div>
+          <div>
+            Median: {perfMetrics.fpsMedian.toFixed(1)} (target: {target.median})
+          </div>
+          <div>
+            1% Low: {perfMetrics.fps1pLow.toFixed(1)} (target: {target.low1p})
+          </div>
+          <div>Min: {perfMetrics.fpsMin.toFixed(1)}</div>
+          <div>Frame Time: {perfMetrics.frameTime.toFixed(2)}ms</div>
+          <div>Frames: {perfMetrics.frameCount}</div>
+          <div className="mt-1 text-gray-400">{perfMetrics.isDesktop ? 'Desktop' : 'Mobile'}</div>
+        </div>
+      </div>
+    );
+  }
 
   return <div ref={handleMount} className="w-full h-full" style={{ zIndex: 0 }} />;
 }

@@ -32,12 +32,20 @@ export class LLMProvider {
     failures: { role: AgentRole; error: string }[];
   }> {
     const roles: AgentRole[] = ['procedure-analyst', 'risk-challenger', 'evidence-auditor'];
+    return this.runSpecialistsForRoles(roles, input, signal);
+  }
+
+  async runSpecialistsForRoles(
+    roles: readonly AgentRole[],
+    input: { title: string; content: string; locale?: string },
+    signal?: AbortSignal,
+  ): Promise<{
+    successes: { role: AgentRole; finding: Finding }[];
+    failures: { role: AgentRole; error: string }[];
+  }> {
     const results = await Promise.all(
       roles.map(async (role) => {
-        const raw = await this.callWithRetry(
-          this.buildSpecialistPrompt(role, input),
-          signal,
-        );
+        const raw = await this.callWithRetry(this.buildSpecialistPrompt(role, input), signal);
         // Runtime schema validation — null if invalid
         const finding = parseFinding(raw);
         return { role, finding };
@@ -56,10 +64,7 @@ export class LLMProvider {
     return { successes, failures };
   }
 
-  async runModerator(
-    findings: Finding[],
-    signal?: AbortSignal,
-  ): Promise<CouncilResult | null> {
+  async runModerator(findings: Finding[], signal?: AbortSignal): Promise<CouncilResult | null> {
     const prompt = this.buildModeratorPrompt(findings);
     const raw = await this.callWithRetry(prompt, signal);
     if (!raw) return null;
@@ -68,10 +73,7 @@ export class LLMProvider {
     return validated.success ? validated.data : null;
   }
 
-  private async callWithRetry(
-    prompt: string,
-    signal?: AbortSignal,
-  ): Promise<unknown> {
+  private async callWithRetry(prompt: string, signal?: AbortSignal): Promise<unknown> {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (signal?.aborted) return null;
       if (attempt > 0) {
@@ -81,15 +83,25 @@ export class LLMProvider {
         const result = await this.callOnce(prompt, this.config.modelName, signal);
         if (result) return result;
       } catch {
-        // If primary fails and fallback configured, try fallback on last retry
+        // Exception during primary call — try fallback on last retry
         if (attempt === MAX_RETRIES && this.config.fallbackName) {
           try {
             const fallback = await this.callOnce(prompt, this.config.fallbackName, signal);
             if (fallback) return fallback;
           } catch {
-            // fallback also failed → return null
+            // fallback also failed
           }
         }
+      }
+    }
+
+    // All retries exhausted and primary returned null/invalid — try fallback once
+    if (this.config.fallbackName) {
+      try {
+        const fallback = await this.callOnce(prompt, this.config.fallbackName, signal);
+        if (fallback) return fallback;
+      } catch {
+        // fallback also failed
       }
     }
     return null;

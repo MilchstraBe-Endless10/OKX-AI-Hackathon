@@ -18,9 +18,7 @@ export {
   type GenerationProgress,
   type CouncilResult,
   type LLMConfig,
+  type Finding,
+  type AgentRole,
 } from './generate.js';
-export {
-  LLMProvider,
-  parseAgentRole,
-  parseFinding,
-} from './llm-provider.js';
+export { LLMProvider, parseAgentRole, parseFinding } from './llm-provider.js';

@@ -87,9 +87,7 @@ describe('10-Round Production Stability', () => {
 
   it('FakeProvider produces deterministic results', async () => {
     const provider = new FakeProvider();
-    const results = await Promise.all(
-      Array.from({ length: 10 }, () => provider.run(validPayload)),
-    );
+    const results = await Promise.all(Array.from({ length: 10 }, () => provider.run(validPayload)));
 
     // All should be READY
     for (const r of results) {

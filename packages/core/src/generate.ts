@@ -14,7 +14,7 @@ import { AttemptBudget } from './attempt-budget.js';
 import { LifecycleState } from './lifecycle.js';
 import { LLMProvider, type LLMConfig } from './llm-provider.js';
 
-export type { CouncilResult, LLMConfig };
+export type { CouncilResult, LLMConfig, Finding, AgentRole };
 
 export interface GenerationResult {
   rehearsalId: string;
@@ -29,6 +29,9 @@ export interface GenerationOptions {
   progressSink?: (event: { phase: LifecycleState }) => void;
   signal?: AbortSignal;
   llm?: LLMConfig; // provide for real model calls
+  // Selective retry: only retry these roles, merge with saved findings
+  savedFindings?: Finding[];
+  failedRoles?: AgentRole[];
 }
 
 export interface GenerationProgress {
@@ -57,7 +60,8 @@ async function runRealProvider(
   llmConfig: LLMConfig,
   options?: GenerationOptions,
 ): Promise<GenerationResult> {
-  const { progressSink, signal } = options ?? {};
+  const { progressSink, signal, savedFindings, failedRoles } = options ?? {};
+  const isRetry = savedFindings !== undefined && savedFindings.length > 0;
 
   if (signal?.aborted) {
     return { rehearsalId: genId(), status: 'CANCELLED', error: 'ABORTED' };
@@ -75,35 +79,90 @@ async function runRealProvider(
   emit(progressSink, 'QUEUED');
   emit(progressSink, 'SPECIALISTS_RUNNING');
 
-  // Run specialists with retry via LLMProvider
-  const { successes, failures } = await provider.runSpecialists(input, signal);
+  let findings: Finding[];
 
-  // Track budget for successful specialist attempts
-  for (const s of successes) {
-    try {
-      budget.startAttempt(s.role);
-    } catch {
-      // budget exceeded but we already have the result
+  if (isRetry && failedRoles && failedRoles.length > 0) {
+    // Selective retry: only retry failed specialists, merge with saved findings
+    const retryRoles = (
+      ['procedure-analyst', 'risk-challenger', 'evidence-auditor'] as const
+    ).filter((r) => failedRoles.includes(r));
+
+    const { successes, failures } = await provider.runSpecialistsForRoles(
+      retryRoles,
+      input,
+      signal,
+    );
+
+    // Track budget
+    for (const s of successes) {
+      try {
+        budget.startAttempt(s.role);
+      } catch {
+        // budget exceeded but we already have the result
+      }
     }
+
+    if (signal?.aborted) {
+      return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
+    }
+
+    // If retry also fails, merge what we have
+    const allFailures = [...failures];
+    if (allFailures.length > 0) {
+      // Some retries still failed — partial with saved findings + remaining failures
+      return {
+        rehearsalId,
+        status: 'PARTIAL_FAILED',
+        partialFindings: savedFindings,
+        failedRoles: [...allFailures.map((f) => f.role)],
+        error: `Retry failed for: ${allFailures.map((f) => f.role).join(', ')}`,
+      };
+    }
+
+    // All retried specialists succeeded — merge with saved findings
+    const savedRoleSet = new Set(savedFindings.map((f) => f.role));
+    const merged = [...savedFindings];
+    for (const s of successes) {
+      if (!savedRoleSet.has(s.role)) {
+        merged.push(s.finding);
+      } else {
+        // Replace old saved finding with new retry result
+        const idx = merged.findIndex((f) => f.role === s.role);
+        if (idx >= 0) merged[idx] = s.finding;
+      }
+    }
+    findings = merged;
+  } else {
+    // Full generation: run all specialists
+    const { successes, failures } = await provider.runSpecialists(input, signal);
+
+    for (const s of successes) {
+      try {
+        budget.startAttempt(s.role);
+      } catch {
+        // budget exceeded but we already have the result
+      }
+    }
+
+    if (signal?.aborted) {
+      return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
+    }
+
+    if (successes.length < 3) {
+      const failed = failures.map((f) => f.role);
+      return {
+        rehearsalId,
+        status: 'PARTIAL_FAILED',
+        partialFindings: successes.map((s) => s.finding),
+        failedRoles: failed,
+        error: `Specialist(s) failed: ${failed.join(', ')}`,
+      };
+    }
+
+    findings = successes.map((s) => s.finding);
   }
 
-  if (signal?.aborted) {
-    return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
-  }
-
-  // Partial failure: not all 3 specialists succeeded
-  if (successes.length < 3) {
-    const failedRoles = failures.map((f) => f.role);
-    return {
-      rehearsalId,
-      status: 'PARTIAL_FAILED',
-      partialFindings: successes.map((s) => s.finding),
-      failedRoles,
-      error: `Specialist(s) failed: ${failedRoles.join(', ')}`,
-    };
-  }
-
-  // All 3 succeeded → proceed to moderator
+  // All 3 findings available → proceed to moderator
   emit(progressSink, 'MODERATING');
 
   try {
@@ -112,11 +171,9 @@ async function runRealProvider(
     return { rehearsalId, status: 'FAILED', error: 'BUDGET_EXCEEDED' };
   }
 
-  const findings = successes.map((s) => s.finding);
   const council = await provider.runModerator(findings, signal);
 
   if (!council) {
-    // Moderator failed but specialists succeeded → partial
     return {
       rehearsalId,
       status: 'PARTIAL_FAILED',

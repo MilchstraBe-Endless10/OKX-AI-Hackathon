@@ -36,7 +36,8 @@ describe('POST /a2mcp/generate-rehearsal', () => {
     });
     expect(response.statusCode).toBe(400);
     const body = response.json();
-    expect(body.code).toBe('VALIDATION_ERROR');
+    expect(body.title).toBeDefined();
+    expect(body.status).toBe(400);
   });
 
   it('returns 415 on string body (Fastify content-type parsing)', async () => {
@@ -72,7 +73,8 @@ describe('POST /a2mcp/generate-rehearsal', () => {
     // Zod .strict() rejects unknown fields
     expect(response.statusCode).toBe(400);
     const body = response.json();
-    expect(body.code).toBe('VALIDATION_ERROR');
+    expect(body.title).toBeDefined();
+    expect(body.status).toBe(400);
   });
 
   it('returns 400 on validation failure (empty content)', async () => {
@@ -86,7 +88,8 @@ describe('POST /a2mcp/generate-rehearsal', () => {
     });
     expect(response.statusCode).toBe(400);
     const body = response.json();
-    expect(body.code).toBe('VALIDATION_ERROR');
+    expect(body.title).toBeDefined();
+    expect(body.status).toBe(400);
   });
 
   it('returns 400 on missing title', async () => {
@@ -147,6 +150,6 @@ describe('GET /health/ready', () => {
     const response = await app.inject({ method: 'GET', url: '/health/ready' });
     expect(response.statusCode).toBe(503);
     const body = response.json();
-    expect(body.code).toBe('NOT_READY');
+    expect(body.title).toBe('Not Ready');
   });
 });

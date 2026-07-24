@@ -29,7 +29,7 @@ describe('Server start smoke test', () => {
     const readyResponse = await fetch(`${serverUrl}/health/ready`);
     expect(readyResponse.status).toBe(503);
     const readyBody = await readyResponse.json();
-    expect(readyBody.code).toBe('NOT_READY');
+    expect(readyBody.title).toBe('Not Ready');
   });
 
   it('starts and processes A2MCP generate request', async () => {
