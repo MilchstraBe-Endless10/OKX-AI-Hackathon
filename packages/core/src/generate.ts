@@ -18,6 +18,7 @@ export type { CouncilResult, LLMConfig, Finding, AgentRole };
 
 export interface GenerationResult {
   rehearsalId: string;
+  originalRehearsalId?: string; // preserved from retry
   status: LifecycleState;
   council?: CouncilResult;
   partialFindings?: Finding[];
@@ -32,6 +33,7 @@ export interface GenerationOptions {
   // Selective retry: only retry these roles, merge with saved findings
   savedFindings?: Finding[];
   failedRoles?: AgentRole[];
+  rehearsalId?: string; // override generated ID (for retry)
 }
 
 export interface GenerationProgress {
@@ -60,19 +62,27 @@ async function runRealProvider(
   llmConfig: LLMConfig,
   options?: GenerationOptions,
 ): Promise<GenerationResult> {
-  const { progressSink, signal, savedFindings, failedRoles } = options ?? {};
+  const { progressSink, signal, savedFindings, failedRoles, rehearsalId: retryId } = options ?? {};
   const isRetry = savedFindings !== undefined && savedFindings.length > 0;
 
+  // Use provided rehearsalId for retry, or generate new one
+  const generatedId = genId();
+  const rehearsalId = retryId ?? generatedId;
+
   if (signal?.aborted) {
-    return { rehearsalId: genId(), status: 'CANCELLED', error: 'ABORTED' };
+    return { rehearsalId, originalRehearsalId: retryId, status: 'CANCELLED', error: 'ABORTED' };
   }
 
   const parsed = SopInputSchema.safeParse(input);
   if (!parsed.success) {
-    return { rehearsalId: genId(), status: 'FAILED', error: 'VALIDATION_ERROR' };
+    return {
+      rehearsalId,
+      originalRehearsalId: retryId,
+      status: 'FAILED',
+      error: 'VALIDATION_ERROR',
+    };
   }
 
-  const rehearsalId = genId();
   const budget = new AttemptBudget({ compression: false });
   const provider = new LLMProvider(llmConfig);
 
@@ -103,7 +113,7 @@ async function runRealProvider(
     }
 
     if (signal?.aborted) {
-      return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
+      return { rehearsalId, originalRehearsalId: retryId, status: 'CANCELLED', error: 'ABORTED' };
     }
 
     // If retry also fails, merge what we have
@@ -112,6 +122,7 @@ async function runRealProvider(
       // Some retries still failed — partial with saved findings + remaining failures
       return {
         rehearsalId,
+        originalRehearsalId: retryId,
         status: 'PARTIAL_FAILED',
         partialFindings: savedFindings,
         failedRoles: [...allFailures.map((f) => f.role)],
@@ -145,13 +156,14 @@ async function runRealProvider(
     }
 
     if (signal?.aborted) {
-      return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
+      return { rehearsalId, originalRehearsalId: retryId, status: 'CANCELLED', error: 'ABORTED' };
     }
 
     if (successes.length < 3) {
       const failed = failures.map((f) => f.role);
       return {
         rehearsalId,
+        originalRehearsalId: retryId,
         status: 'PARTIAL_FAILED',
         partialFindings: successes.map((s) => s.finding),
         failedRoles: failed,
@@ -168,7 +180,12 @@ async function runRealProvider(
   try {
     budget.startAttempt('moderator');
   } catch {
-    return { rehearsalId, status: 'FAILED', error: 'BUDGET_EXCEEDED' };
+    return {
+      rehearsalId,
+      originalRehearsalId: retryId,
+      status: 'FAILED',
+      error: 'BUDGET_EXCEEDED',
+    };
   }
 
   const council = await provider.runModerator(findings, signal);
@@ -176,6 +193,7 @@ async function runRealProvider(
   if (!council) {
     return {
       rehearsalId,
+      originalRehearsalId: retryId,
       status: 'PARTIAL_FAILED',
       partialFindings: findings,
       failedRoles: ['moderator'],
@@ -187,6 +205,7 @@ async function runRealProvider(
   if (!councilValid.success) {
     return {
       rehearsalId,
+      originalRehearsalId: retryId,
       status: 'PARTIAL_FAILED',
       partialFindings: findings,
       failedRoles: ['moderator'],
@@ -197,7 +216,7 @@ async function runRealProvider(
   emit(progressSink, 'PERSISTING');
   emit(progressSink, 'READY');
 
-  return { rehearsalId, status: 'READY', council: councilValid.data };
+  return { rehearsalId, originalRehearsalId: retryId, status: 'READY', council: councilValid.data };
 }
 
 // ─── Fake Provider (test fixtures) ───────────────────────────────
@@ -226,18 +245,18 @@ export class FakeProvider {
     input: { title: string; content: string; locale?: string },
     options?: GenerationOptions,
   ): Promise<GenerationResult> {
-    const { progressSink, signal } = options ?? {};
+    const { progressSink, signal, rehearsalId: retryId } = options ?? {};
+    const rehearsalId = retryId ?? genId();
 
     if (signal?.aborted) {
-      return { rehearsalId: genId(), status: 'CANCELLED', error: 'ABORTED' };
+      return { rehearsalId, originalRehearsalId: retryId, status: 'CANCELLED', error: 'ABORTED' };
     }
 
     const parsed = SopInputSchema.safeParse(input);
     if (!parsed.success) {
-      return { rehearsalId: genId(), status: 'FAILED', error: 'VALIDATION_ERROR' };
+      return { rehearsalId, status: 'FAILED', error: 'VALIDATION_ERROR' };
     }
 
-    const rehearsalId = genId();
     const budget = new AttemptBudget({ compression: false });
 
     emit(progressSink, 'QUEUED');
@@ -271,7 +290,7 @@ export class FakeProvider {
     this.execOrder.push('specialists-parallel');
 
     if (signal?.aborted) {
-      return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
+      return { rehearsalId, originalRehearsalId: retryId, status: 'CANCELLED', error: 'ABORTED' };
     }
 
     emit(progressSink, 'MODERATING');
@@ -279,7 +298,12 @@ export class FakeProvider {
     try {
       budget.startAttempt('moderator');
     } catch {
-      return { rehearsalId, status: 'FAILED', error: 'BUDGET_EXCEEDED' };
+      return {
+        rehearsalId,
+        originalRehearsalId: retryId,
+        status: 'FAILED',
+        error: 'BUDGET_EXCEEDED',
+      };
     }
 
     const council: CouncilResult = {
@@ -328,63 +352,31 @@ export class SlowFakeProvider extends FakeProvider {
     input: { title: string; content: string; locale?: string },
     options?: GenerationOptions,
   ): Promise<GenerationResult> {
-    const { progressSink, signal } = options ?? {};
-
+    const { progressSink, signal, rehearsalId: retryId } = options ?? {};
+    // Add delay before calling parent
     if (signal?.aborted) {
-      return { rehearsalId: genId(), status: 'CANCELLED', error: 'ABORTED' };
+      const generatedId = retryId ?? genId();
+      return {
+        rehearsalId: generatedId,
+        originalRehearsalId: retryId,
+        status: 'CANCELLED',
+        error: 'ABORTED',
+      };
     }
-
-    const parsed = SopInputSchema.safeParse(input);
-    if (!parsed.success) {
-      return { rehearsalId: genId(), status: 'FAILED', error: 'VALIDATION_ERROR' };
-    }
-
-    const rehearsalId = genId();
-
-    emit(progressSink, 'QUEUED');
-    emit(progressSink, 'SPECIALISTS_RUNNING');
 
     await new Promise((resolve) => setTimeout(resolve, this.delayMs));
 
     if (signal?.aborted) {
-      return { rehearsalId, status: 'CANCELLED', error: 'ABORTED' };
+      const generatedId = retryId ?? genId();
+      return {
+        rehearsalId: generatedId,
+        originalRehearsalId: retryId,
+        status: 'CANCELLED',
+        error: 'ABORTED',
+      };
     }
 
-    const roles = ['procedure-analyst', 'risk-challenger', 'evidence-auditor'] as const;
-
-    const specialists = roles.map((role) => ({
-      role,
-      finding: makeFixtureFinding(role, input.title),
-    }));
-
-    emit(progressSink, 'MODERATING');
-
-    const council: CouncilResult = {
-      consensus: specialists.map((s) => s.finding),
-      disagreements: [],
-      evidenceGaps: [],
-      recommendedPath: ['verify', 'report'],
-      decisionNodes: [
-        {
-          id: 'action',
-          prompt: '如何处理此 SOP？',
-          options: [
-            { id: 'execute', label: '执行', consequence: 'done' },
-            { id: 'review', label: '复核后执行', consequence: 'verified' },
-          ],
-        },
-      ],
-    };
-
-    const councilParsed = CouncilResultSchema.safeParse(council);
-    if (!councilParsed.success) {
-      return { rehearsalId, status: 'FAILED', error: 'COUNCIL_VALIDATION_FAILED' };
-    }
-
-    emit(progressSink, 'PERSISTING');
-    emit(progressSink, 'READY');
-
-    return { rehearsalId, status: 'READY', council };
+    return super.run(input, { progressSink, signal, rehearsalId: retryId });
   }
 }
 

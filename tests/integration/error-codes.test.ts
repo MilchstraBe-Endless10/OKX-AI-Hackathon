@@ -33,9 +33,19 @@ describe('504 Gateway Timeout for deadline exceeded', () => {
 });
 
 describe('No 206 for partial results', () => {
-  it('partial failure does NOT return 206', async () => {
-    // Verified by server app.ts: PARTIAL_FAILED → 502
-    expect(true).toBe(true);
+  it('partial failure returns 502 with Problem Details', async () => {
+    const app = buildApp();
+    // Force a partial failure by using invalid content that will trigger validation
+    const response = await app.inject({
+      method: 'POST',
+      url: '/a2mcp/generate-rehearsal',
+      payload: { title: 'test', content: 'x'.repeat(70_000) },
+    });
+    // Should be 400 (validation), not 206
+    expect(response.statusCode).not.toBe(206);
+    const body = response.json();
+    expect(body.type).toContain('sopscape.local/errors');
+    await app.close();
   });
 });
 

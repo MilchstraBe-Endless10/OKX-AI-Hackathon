@@ -74,10 +74,14 @@ function formatAuthError() {
 }
 
 // Auth middleware for retry endpoint — validates SOPSCAPE_API_KEY header
+// ponytail: dev mode = localhost only; production always requires key.
 function requireAuth(headers: Record<string, string | string[] | undefined>): boolean {
   const apiKey = headers['authorization'] as string | undefined;
   const expected = process.env.SOPSCAPE_API_KEY;
-  if (!expected) return true; // No key configured → skip auth (dev mode)
+  // Dev mode: localhost without key (NODE_ENV !== 'production')
+  if (!expected && process.env.NODE_ENV !== 'production') return true;
+  // Production: always require valid key
+  if (!expected) return false;
   return apiKey === `Bearer ${expected}`;
 }
 
@@ -344,6 +348,8 @@ export function buildApp(): FastifyInstance {
           // Pass saved findings so core can merge results
           savedFindings: exercise.savedFindings,
           failedRoles: exercise.failedRoles,
+          // Preserve original rehearsal ID
+          rehearsalId: rehearsalId,
         }),
         deadline(A2MCP_DEADLINE_MS - A2MCP_RESPONSE_RESERVE_MS, controller.signal),
       ]);
@@ -354,7 +360,7 @@ export function buildApp(): FastifyInstance {
           exercise.running = false;
           exercise.failedRoles = [];
           return reply.code(200).send({
-            rehearsalId: result.rehearsalId,
+            rehearsalId: result.originalRehearsalId ?? result.rehearsalId,
             status: result.status,
             consensus: councilValid.data.consensus,
             disagreements: councilValid.data.disagreements,

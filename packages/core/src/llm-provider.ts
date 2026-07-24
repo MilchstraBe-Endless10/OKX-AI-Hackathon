@@ -45,10 +45,12 @@ export class LLMProvider {
   }> {
     const results = await Promise.all(
       roles.map(async (role) => {
-        const raw = await this.callWithRetry(this.buildSpecialistPrompt(role, input), signal);
-        // Runtime schema validation — null if invalid
-        const finding = parseFinding(raw);
-        return { role, finding };
+        // callWithRetry validates with parseFinding — triggers fallback on schema failure
+        const raw = await this.callWithRoleValidation(
+          this.buildSpecialistPrompt(role, input),
+          signal,
+        );
+        return { role, finding: raw };
       }),
     );
 
@@ -64,50 +66,59 @@ export class LLMProvider {
     return { successes, failures };
   }
 
-  async runModerator(findings: Finding[], signal?: AbortSignal): Promise<CouncilResult | null> {
-    const prompt = this.buildModeratorPrompt(findings);
-    const raw = await this.callWithRetry(prompt, signal);
-    if (!raw) return null;
-
-    const validated = CouncilResultSchema.safeParse(raw);
-    return validated.success ? validated.data : null;
-  }
-
-  private async callWithRetry(prompt: string, signal?: AbortSignal): Promise<unknown> {
+  /** Call with retry AND schema validation — triggers fallback on invalid structure */
+  private async callWithRoleValidation(
+    prompt: string,
+    signal?: AbortSignal,
+  ): Promise<Finding | null> {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (signal?.aborted) return null;
       if (attempt > 0) {
         await new Promise((r) => setTimeout(r, 500 * attempt));
       }
-      try {
-        const result = await this.callOnce(prompt, this.config.modelName, signal);
-        if (result) return result;
-      } catch {
-        // Exception during primary call — try fallback on last retry
-        if (attempt === MAX_RETRIES && this.config.fallbackName) {
-          try {
-            const fallback = await this.callOnce(prompt, this.config.fallbackName, signal);
-            if (fallback) return fallback;
-          } catch {
-            // fallback also failed
-          }
-        }
-      }
-    }
-
-    // All retries exhausted and primary returned null/invalid — try fallback once
-    if (this.config.fallbackName) {
-      try {
-        const fallback = await this.callOnce(prompt, this.config.fallbackName, signal);
-        if (fallback) return fallback;
-      } catch {
-        // fallback also failed
+      const raw = await this.callOneAttempt(prompt, this.config.modelName, signal);
+      const finding = parseFinding(raw);
+      if (finding) return finding;
+      // Schema invalid — try fallback on last retry
+      if (attempt === MAX_RETRIES && this.config.fallbackName) {
+        const fallbackRaw = await this.callOneAttempt(prompt, this.config.fallbackName, signal);
+        const fallbackFinding = parseFinding(fallbackRaw);
+        if (fallbackFinding) return fallbackFinding;
       }
     }
     return null;
   }
 
-  private async callOnce(
+  async runModerator(findings: Finding[], signal?: AbortSignal): Promise<CouncilResult | null> {
+    const prompt = this.buildModeratorPrompt(findings);
+    const raw = await this.callWithCouncilValidation(prompt, signal);
+    return raw;
+  }
+
+  /** Call with retry AND council schema validation — triggers fallback on invalid structure */
+  private async callWithCouncilValidation(
+    prompt: string,
+    signal?: AbortSignal,
+  ): Promise<CouncilResult | null> {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (signal?.aborted) return null;
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+      }
+      const raw = await this.callOneAttempt(prompt, this.config.modelName, signal);
+      const validated = CouncilResultSchema.safeParse(raw);
+      if (validated.success) return validated.data;
+      // Schema invalid — try fallback on last retry
+      if (attempt === MAX_RETRIES && this.config.fallbackName) {
+        const fallbackRaw = await this.callOneAttempt(prompt, this.config.fallbackName, signal);
+        const fallbackValidated = CouncilResultSchema.safeParse(fallbackRaw);
+        if (fallbackValidated.success) return fallbackValidated.data;
+      }
+    }
+    return null;
+  }
+
+  private async callOneAttempt(
     prompt: string,
     modelName: string,
     signal?: AbortSignal,
