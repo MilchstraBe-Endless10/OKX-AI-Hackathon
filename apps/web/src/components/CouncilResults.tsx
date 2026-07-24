@@ -1,4 +1,4 @@
-import type { UIPhase } from '../lib/api';
+import type { A2mcpProblemDetails, UIPhase } from '../lib/api';
 import type { CouncilResult } from '@sopscape/contracts';
 import { getMessages, type AppMessages } from '../lib/preferences';
 
@@ -7,6 +7,7 @@ interface CouncilResultsProps {
   rehearsalId: string | null;
   result: CouncilResult | null;
   errorMessage?: string | null;
+  errorDetails?: A2mcpProblemDetails | null;
   messages?: AppMessages;
   selectedDecision?: string | null;
   onDecision?: (choiceId: string) => void;
@@ -18,13 +19,14 @@ export default function CouncilResults({
   rehearsalId,
   result,
   errorMessage = null,
+  errorDetails = null,
   messages,
   selectedDecision = null,
   onDecision,
   onShare,
 }: CouncilResultsProps) {
   const copy = messages ?? getMessages('zh-CN');
-  const isFailed = phase === 'FAILED';
+  const isFailed = phase === 'FAILED' || phase === 'PARTIAL_FAILED';
   const isLoading =
     phase !== 'READY' &&
     phase !== 'FAILED' &&
@@ -53,6 +55,23 @@ export default function CouncilResults({
       >
         <h2 className="text-base font-semibold text-danger mb-2">{copy.failedTitle}</h2>
         <p className="text-sm text-slate-300">{errorMessage ?? copy.callFailed}</p>
+        {errorDetails?.status && (
+          <p className="mt-2 text-xs text-slate-400" data-testid="council-error-status">
+            HTTP {errorDetails.status}
+            {errorDetails.code ? ` · ${errorDetails.code}` : ''}
+          </p>
+        )}
+        {errorDetails?.failedExperts && errorDetails.failedExperts.length > 0 && (
+          <p className="mt-1 text-xs text-danger/90" data-testid="failed-experts">
+            失败专家：
+            {errorDetails.failedExperts.map((item) => item.expert ?? 'unknown').join('、')}
+          </p>
+        )}
+        {errorDetails?.requestId && (
+          <p className="mt-1 text-xs text-slate-500 font-mono" data-testid="error-request-id">
+            requestId: {errorDetails.requestId}
+          </p>
+        )}
         <p className="mt-2 text-xs text-slate-400">{copy.retry}</p>
       </div>
     );

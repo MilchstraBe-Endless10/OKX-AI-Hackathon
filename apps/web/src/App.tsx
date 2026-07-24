@@ -9,7 +9,14 @@ import IdentityPanel from './components/IdentityPanel';
 import ShareReport from './components/ShareReport';
 import ShareDialog from './components/ShareDialog';
 import TeamManagement from './components/TeamManagement';
-import { councilToScene, generateRehearsal, type GenerationPhase, type UIPhase } from './lib/api';
+import {
+  A2mcpError,
+  councilToScene,
+  generateRehearsal,
+  type A2mcpProblemDetails,
+  type GenerationPhase,
+  type UIPhase,
+} from './lib/api';
 import { productApi, type Member as ApiMember } from './lib/product-api';
 import type {
   CouncilResult,
@@ -89,6 +96,7 @@ export default function App() {
   const [selectedDecision, setSelectedDecision] = useState<string | null>(null);
   const [sceneView, setSceneView] = useState<SceneView>('consensus');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<A2mcpProblemDetails | null>(null);
   const [activeView, setActiveView] = useState<AppView>('command');
   const [productRefresh, setProductRefresh] = useState(0);
   const [decisionEvaluations, setDecisionEvaluations] = useState<DecisionEvaluation[]>([]);
@@ -143,7 +151,12 @@ export default function App() {
     return () => context.revert();
   }, []);
 
-  const progress = phase === 'idle' ? 0 : phase === 'READY' || phase === 'FAILED' ? 100 : 55;
+  const progress =
+    phase === 'idle'
+      ? 0
+      : phase === 'READY' || phase === 'FAILED' || phase === 'PARTIAL_FAILED'
+        ? 100
+        : 55;
   const firstChoiceId = council?.decisionNodes[0]?.options[0]?.id;
   const consensusScore = council?.consensus.length
     ? Math.round(
@@ -166,6 +179,7 @@ export default function App() {
     setCurrentSop(null);
     setTrainingResult(null);
     setErrorMessage(null);
+    setErrorDetails(null);
     setSceneView('consensus');
     setRehearsalId(null);
     setCouncil(null);
@@ -181,14 +195,22 @@ export default function App() {
       setProductRefresh((value) => value + 1);
       setPhase('READY');
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '未知错误，请稍后重试');
-      setPhase('FAILED');
+      if (error instanceof A2mcpError) {
+        setErrorDetails(error.problem);
+        setErrorMessage(error.message);
+        setPhase(error.problem.rehearsalStatus === 'PARTIAL_FAILED' ? 'PARTIAL_FAILED' : 'FAILED');
+      } else {
+        setErrorDetails(null);
+        setErrorMessage(error instanceof Error ? error.message : '未知错误，请稍后重试');
+        setPhase('FAILED');
+      }
     }
   }
 
   function resetRehearsal() {
     setSelectedDecision(null);
     setErrorMessage(null);
+    setErrorDetails(null);
     setRehearsalId(null);
     setCouncil(null);
     setScene(EMPTY_SCENE);
@@ -283,7 +305,7 @@ export default function App() {
                   ? messages.waitingInput
                   : phase === 'READY'
                     ? messages.resultReady
-                    : phase === 'FAILED'
+                    : phase === 'FAILED' || phase === 'PARTIAL_FAILED'
                       ? messages.callFailed
                       : messages.running}
               </span>
@@ -526,6 +548,7 @@ export default function App() {
                     rehearsalId={rehearsalId}
                     result={council}
                     errorMessage={errorMessage}
+                    errorDetails={errorDetails}
                     messages={messages}
                     selectedDecision={selectedDecision}
                     onDecision={chooseDecision}
