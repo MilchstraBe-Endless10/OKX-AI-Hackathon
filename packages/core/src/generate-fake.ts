@@ -52,18 +52,22 @@ export class FakeProvider {
     input: { title: string; content: string; locale?: string },
     options?: GenerationOptions,
   ): Promise<GenerationResult> {
-    const { progressSink, signal } = options ?? {};
+    const { progressSink, signal, rehearsalId: overrideRehearsalId } = options ?? {};
 
     if (signal?.aborted) {
-      return { rehearsalId: genId(), status: 'CANCELLED', error: 'ABORTED' };
+      return { rehearsalId: overrideRehearsalId ?? genId(), status: 'CANCELLED', error: 'ABORTED' };
     }
 
     const parsed = SopInputSchema.safeParse(input);
     if (!parsed.success) {
-      return { rehearsalId: genId(), status: 'FAILED', error: 'VALIDATION_ERROR' };
+      return {
+        rehearsalId: overrideRehearsalId ?? genId(),
+        status: 'FAILED',
+        error: 'VALIDATION_ERROR',
+      };
     }
 
-    const rehearsalId = genId();
+    const rehearsalId = overrideRehearsalId ?? genId();
     const budget = new AttemptBudget({ compression: false });
 
     emit(progressSink, 'QUEUED');
@@ -154,18 +158,22 @@ export class SlowFakeProvider extends FakeProvider {
     input: { title: string; content: string; locale?: string },
     options?: GenerationOptions,
   ): Promise<GenerationResult> {
-    const { progressSink, signal } = options ?? {};
+    const { progressSink, signal, rehearsalId: overrideRehearsalId } = options ?? {};
 
     if (signal?.aborted) {
-      return { rehearsalId: genId(), status: 'CANCELLED', error: 'ABORTED' };
+      return { rehearsalId: overrideRehearsalId ?? genId(), status: 'CANCELLED', error: 'ABORTED' };
     }
 
     const parsed = SopInputSchema.safeParse(input);
     if (!parsed.success) {
-      return { rehearsalId: genId(), status: 'FAILED', error: 'VALIDATION_ERROR' };
+      return {
+        rehearsalId: overrideRehearsalId ?? genId(),
+        status: 'FAILED',
+        error: 'VALIDATION_ERROR',
+      };
     }
 
-    const rehearsalId = genId();
+    const rehearsalId = overrideRehearsalId ?? genId();
 
     emit(progressSink, 'QUEUED');
     emit(progressSink, 'SPECIALISTS_RUNNING');

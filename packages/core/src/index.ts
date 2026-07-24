@@ -16,6 +16,6 @@ export {
   type GenerationProgress,
   type CouncilResult,
 } from './generate.js';
-export { LLMProvider, type LLMConfig } from './llm-provider.js';
+export { LLMProvider, type LLMConfig, parseFinding, parseAgentRole } from './llm-provider.js';
 export { FakeProvider, SlowFakeProvider } from './generate-fake.js';
 export { generateScenario, type ScenarioGenerationConfig } from './scenario-generator.js';
