@@ -10,6 +10,7 @@ describe('statusToPhase', () => {
     expect(statusToPhase('MODERATING')).toBe('MODERATING');
     expect(statusToPhase('PERSISTING')).toBe('PERSISTING');
     expect(statusToPhase('READY')).toBe('READY');
+    expect(statusToPhase('PARTIAL_FAILED')).toBe('PARTIAL_FAILED');
     expect(statusToPhase('FAILED')).toBe('FAILED');
     expect(statusToPhase('CANCELLED')).toBe('CANCELLED');
     expect(statusToPhase('EXPIRED')).toBe('EXPIRED');
@@ -101,5 +102,37 @@ describe('A2MCP adapter', () => {
         request as typeof fetch,
       ),
     ).rejects.toThrow('模型服务暂时不可用');
+  });
+
+  test('preserves problem details for a deadline partial failure', async () => {
+    const request = vi.fn(async () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            status: 504,
+            detail: 'The rehearsal exceeded its deadline.',
+            code: 'REHEARSAL_DEADLINE_EXCEEDED',
+            rehearsalStatus: 'PARTIAL_FAILED',
+            requestId: 'req-1',
+            failedExperts: [{ expert: 'risk-challenger', attemptCount: 3 }],
+          }),
+          { status: 504, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+    );
+
+    await expect(
+      generateRehearsal(
+        { title: 'test', content: 'content', locale: 'zh-CN' },
+        request as typeof fetch,
+      ),
+    ).rejects.toMatchObject({
+      status: 504,
+      problem: {
+        code: 'REHEARSAL_DEADLINE_EXCEEDED',
+        rehearsalStatus: 'PARTIAL_FAILED',
+        requestId: 'req-1',
+      },
+    });
   });
 });

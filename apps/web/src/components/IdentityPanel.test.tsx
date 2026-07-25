@@ -29,4 +29,22 @@ describe('IdentityPanel', () => {
     await waitFor(() => expect(login).toHaveBeenCalled());
     expect(await screen.findByText('Owner · owner')).toBeInTheDocument();
   });
+
+  it('announces rejected credentials without leaving the login boundary', async () => {
+    const me = vi.fn(async () => Promise.reject(new Error('请先登录')));
+    const login = vi.fn(async () => {
+      throw new Error('身份验证失败');
+    });
+
+    render(<IdentityPanel me={me} login={login} />);
+    expect(await screen.findByRole('heading', { name: '登录 SOPscape' })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('密码'), {
+      target: { value: 'wrong-password-for-test' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '安全登录' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('身份验证失败');
+    expect(screen.getByRole('heading', { name: '登录 SOPscape' })).toBeInTheDocument();
+  });
 });

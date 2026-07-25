@@ -38,6 +38,29 @@ describe('CouncilResults', () => {
     expect(screen.getByText(/点击“新建演练”后重试/)).toBeInTheDocument();
   });
 
+  test('shows partial failure details without rendering a result', () => {
+    render(
+      <CouncilResults
+        phase="PARTIAL_FAILED"
+        rehearsalId="r-partial"
+        result={null}
+        errorMessage="专家恢复失败"
+        errorDetails={{
+          status: 502,
+          code: 'EXPERT_RECOVERY_EXHAUSTED',
+          requestId: 'req-partial',
+          failedExperts: [{ expert: 'evidence-auditor' }],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('council-error')).toBeInTheDocument();
+    expect(screen.getByTestId('council-error-status')).toHaveTextContent('HTTP 502');
+    expect(screen.getByTestId('failed-experts')).toHaveTextContent('evidence-auditor');
+    expect(screen.getByTestId('error-request-id')).toHaveTextContent('req-partial');
+    expect(screen.queryByTestId('council-ready')).not.toBeInTheDocument();
+  });
+
   test('shows results when phase is READY', () => {
     renderResults('READY', 'test-001');
     expect(screen.getByTestId('council-ready')).toBeInTheDocument();

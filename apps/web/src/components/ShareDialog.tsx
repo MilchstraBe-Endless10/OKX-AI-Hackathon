@@ -46,10 +46,10 @@ export default function ShareDialog({ rehearsalId, onClose, onShareCreated }: Sh
   }
 
   return (
-    <div className="share-overlay" role="dialog" aria-modal="true">
+    <div className="share-overlay" role="dialog" aria-modal="true" aria-labelledby="share-title">
       <div className="share-card">
         <span>SHARE · 安全分享</span>
-        <h2>分享演练报告</h2>
+        <h2 id="share-title">分享演练报告</h2>
         <p>生成一个只读链接，无需登录即可查看本次演练结果。</p>
 
         {createdShare ? (

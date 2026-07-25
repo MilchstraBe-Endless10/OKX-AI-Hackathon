@@ -88,10 +88,15 @@ export default function IdentityPanel({
   }
 
   return (
-    <div className="identity-overlay" role="dialog" aria-modal="true">
+    <div
+      className="identity-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="identity-title"
+    >
       <form className="identity-card" onSubmit={invitationToken ? submitInvitation : submitLogin}>
         <span>FORMAL IDENTITY · RBAC</span>
-        <h2>{invitationToken ? '接受团队邀请' : '登录 SOPscape'}</h2>
+        <h2 id="identity-title">{invitationToken ? '接受团队邀请' : '登录 SOPscape'}</h2>
         <p>
           {invitationToken
             ? '设置成员姓名和密码。邀请令牌只能使用一次。'
@@ -132,7 +137,11 @@ export default function IdentityPanel({
             required
           />
         </label>
-        {error && <div className="product-alert">{error}</div>}
+        {error && (
+          <div className="product-alert" role="alert" aria-live="assertive">
+            {error}
+          </div>
+        )}
         <button type="submit">{invitationToken ? '加入工作区' : '安全登录'}</button>
       </form>
     </div>
