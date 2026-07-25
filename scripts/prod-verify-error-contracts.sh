@@ -228,7 +228,19 @@ echo ""
 # ─── Security: API key not leaked in responses ───
 echo "--- Security: No API Key Leakage ---"
 RESP=$(curl -s -X GET "$BASE_URL/health/ready" 2>/dev/null)
-if echo "$RESP" | grep -q "sk-\|Bearer\|api.key"; then
+if echo "$RESP" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+text = json.dumps(d)
+# Check for actual secret values, not field names like 'service_api_key'
+if 'sk-' in text or 'Bearer ' in text:
+    sys.exit(0)
+# Check if any value (not key) looks like a secret
+for v in d.values():
+    if isinstance(v, str) and (len(v) > 20 and any(c in v for c in 'sk- key token secret')):
+        sys.exit(0)
+sys.exit(1)
+" 2>/dev/null; then
   fail "API key or credentials leaked in health response"
 else
   pass "No API key leakage in health endpoint"

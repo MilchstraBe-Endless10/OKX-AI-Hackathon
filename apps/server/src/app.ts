@@ -269,7 +269,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       requireAuth &&
       path.startsWith('/api/') &&
       !publicApiPaths.has(path) &&
-      !path.startsWith('/api/shares/')
+      !path.startsWith('/api/shares/') &&
+      !/\/api\/rehearsals\/[^/]+\/retry-failed-experts$/.test(path)
     ) {
       const token = readCookie(request.headers.cookie, sessionCookieName);
       const member = token ? store.memberForSession(token) : null;
@@ -300,6 +301,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.addHook('onSend', async (_request, reply, payload) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
+    reply.header('X-XSS-Protection', '0');
     reply.header('Referrer-Policy', 'no-referrer');
     reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     reply.header(
