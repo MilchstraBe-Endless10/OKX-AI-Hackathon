@@ -132,6 +132,33 @@ describe('GET /health/live', () => {
   });
 });
 
+describe('OKX.AI public free endpoint', () => {
+  it('keeps the listing endpoint public while MCP remains protected', async () => {
+    const app = buildApp({
+      databasePath: ':memory:',
+      serviceApiKey: 'private-service-key',
+      publicFreeA2mcp: true,
+    });
+    const listingCall = await app.inject({
+      method: 'POST',
+      url: '/a2mcp/generate-rehearsal',
+      payload: {
+        title: 'Incident response',
+        content: 'Verify the alert independently, contain the incident, and report evidence.',
+      },
+    });
+    const mcpCall = await app.inject({
+      method: 'POST',
+      url: '/mcp',
+      headers: { 'content-type': 'application/json' },
+      payload: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+    });
+    expect(listingCall.statusCode).toBe(200);
+    expect(mcpCall.statusCode).toBe(401);
+    await app.close();
+  });
+});
+
 describe('GET /health/ready', () => {
   let app: FastifyInstance;
 

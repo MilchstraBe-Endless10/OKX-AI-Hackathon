@@ -49,6 +49,7 @@ function PhaseDot({ phase }: { phase: GenerationPhase }) {
     MODERATING: 'bg-teal-400',
     PERSISTING: 'bg-amber-400',
     READY: 'bg-safe',
+    PARTIAL_FAILED: 'bg-danger',
     FAILED: 'bg-danger',
     CANCELLED: 'bg-slate-500',
     EXPIRED: 'bg-slate-500',
@@ -108,6 +109,7 @@ function expertStatus(phase: GenerationPhase): string {
     case 'READY':
       return 'complete';
     case 'FAILED':
+    case 'PARTIAL_FAILED':
       return 'failed';
     case 'CANCELLED':
     case 'EXPIRED':
@@ -142,6 +144,7 @@ function phaseLabel(phase: GenerationPhase): string {
     MODERATING: 'Synthesizing results',
     PERSISTING: 'Saving results',
     READY: 'Results ready',
+    PARTIAL_FAILED: 'Partial failure — retry required',
     FAILED: 'Analysis failed',
     CANCELLED: 'Cancelled',
     EXPIRED: 'Expired',

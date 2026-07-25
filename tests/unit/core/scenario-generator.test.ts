@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { generateScenario, type ScenarioGenerationConfig } from '@sopscape/core';
-import { CouncilResultSchema, ScenarioSchema } from '@sopscape/contracts';
+import { ScenarioSchema } from '@sopscape/contracts';
 
 describe('generateScenario', () => {
   const validCouncil = {

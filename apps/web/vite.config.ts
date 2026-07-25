@@ -5,7 +5,11 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    proxy: { '/a2mcp': 'http://127.0.0.1:3000' },
+    proxy: {
+      '/a2mcp': process.env.SOPSCAPE_SERVER_URL ?? 'http://127.0.0.1:3000',
+      '/api': process.env.SOPSCAPE_SERVER_URL ?? 'http://127.0.0.1:3000',
+      '/health': process.env.SOPSCAPE_SERVER_URL ?? 'http://127.0.0.1:3000',
+    },
   },
   build: {
     rollupOptions: {

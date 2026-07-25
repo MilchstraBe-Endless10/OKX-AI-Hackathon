@@ -1,254 +1,117 @@
-# OKX.AI 上架验证指南
+# OKX.AI 上架执行清单
 
-## 前提条件
+## 上架对象
 
-- ✅ 部署到公网 HTTPS 域名
-- ✅ 配置真实 MODEL_API_KEY
-- ✅ 所有健康检查端点正常
-- ✅ A2MCP 接口返回 200 状态码
-- ✅ Web 应用正常渲染 3D 指挥室
-- ✅ 无浏览器控制台错误
+- 类型：A2MCP
+- 计费：免费，价格填 `0`
+- Endpoint：`https://sopscape-production.up.railway.app/a2mcp/generate-rehearsal`
+- Method：`POST`
+- Content-Type：`application/json`
+- x402：Hackathon 期间不启用
 
-## 验证清单
+OKX.AI 允许免费 A2MCP endpoint 直接返回 HTTP 200；注册时需要服务名称、描述、价格和 endpoint。审核通常在 24 小时内完成，因此必须尽早提交。
 
-### 1. 基础设施验证
+官方资料：
 
-#### 1.1 HTTPS 证书验证
+- [ASP 注册流程](https://web3.okx.com/zh-hans/onchainos/dev-docs/okxai/registerasp)
+- [A2MCP 指南](https://web3.okx.com/zh-hans/onchainos/dev-docs/okxai/howtomcp)
+- [Hackathon 页面](https://www.hackquest.io/hackathons/OKXAI-Genesis-Hackathon)
 
-```bash
-# 检查 SSL 证书
-openssl s_client -connect your-domain.com:443 -servername your-domain.com < /dev/null | \
-  openssl x509 -noout -dates -subject
+## Railway 必需变量
+
+```text
+NODE_ENV=production
+SOPSCAPE_DATABASE_PATH=/app/data/sopscape.sqlite
+SOPSCAPE_REQUIRE_AUTH=true
+SOPSCAPE_OWNER_PASSWORD=<sealed>
+SOPSCAPE_SESSION_SECRET=<sealed>
+SOPSCAPE_API_KEY=<sealed>
+MODEL_API_KEY=<sealed>
+MODEL_BASE_URL=<provider base URL>
+MODEL_NAME=<model>
+PUBLIC_APP_ORIGIN=https://sopscape-production.up.railway.app
+OKX_PUBLIC_FREE_A2MCP=true
+PUBLIC_A2MCP_RATE_LIMIT_PER_MINUTE=6
 ```
 
-预期输出：
-- `notBefore` 应该是过去时间
-- `notAfter` 应该是未来时间 (至少 30 天)
-- `subject` 应该匹配你的域名
+`OKX_PUBLIC_FREE_A2MCP=true` 只公开比赛注册所需的
+`/a2mcp/generate-rehearsal`。标准 `/mcp` 和其他服务接口继续要求 Bearer Token。
 
-#### 1.2 端口连通性
+## 请求格式
 
-```bash
-# 检查 HTTP
-curl -I http://your-domain.com
-
-# 检查 HTTPS
-curl -I https://your-domain.com
-
-# 检查健康端点
-curl https://your-domain.com/health/live
-```
-
-预期输出：
-- HTTP: 301/302 重定向到 HTTPS
-- HTTPS: 200 状态码
-- `/health/live`: `{"status":"ok"}`
-
-#### 1.3 安全响应头
-
-```bash
-curl -I https://your-domain.com | grep -E "Content-Security|X-Frame|X-Content"
-```
-
-预期输出：
-- `Content-Security-Policy`: 存在且限制严格
-- `X-Frame-Options`: DENY 或 SAMEORIGIN
-- `X-Content-Type-Options`: nosniff
-
-### 2. A2MCP 能力验证
-
-#### 2.1 POST /a2mcp/generate-rehearsal
-
-```bash
-curl -X POST https://your-domain.com/a2mcp/generate-rehearsal \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "钓鱼邮件处置",
-    "content": "收到可疑邮件后：不点击链接、独立核验发件人、上报安全团队"
-  }'
-```
-
-预期响应：
 ```json
 {
-  "rehearsalId": "r-1721712345678-1",
-  "status": "READY",
-  "consensus": [...],
-  "disagreements": [],
-  "evidenceGaps": [],
-  "recommendedPath": ["verify", "report"],
-  "decisionNodes": [...]
+  "title": "Phishing email response",
+  "content": "Do not click embedded links. Verify the sender independently, preserve evidence, and report the message to the security team.",
+  "locale": "en-US"
 }
 ```
 
-#### 2.2 模型调用稳定性测试
+成功响应必须包含：
 
-执行 10 次连续调用：
-
-```bash
-for i in {1..10}; do
-  echo "Test $i:"
-  curl -X POST https://your-domain.com/a2mcp/generate-rehearsal \
-    -H "Content-Type: application/json" \
-    -d '{"title":"test","content":"test content"}' \
-    -w "%{http_code}\n" -o /dev/null
-  sleep 2
-done
+```text
+rehearsalId
+status
+consensus[]
+disagreements[]
+evidenceGaps[]
+recommendedPath[]
+decisionNodes[]
 ```
 
-预期：所有请求返回 200，响应时间 < 10 秒
+## 自动预检
 
-### 3. Web 应用验证
-
-#### 3.1 桌面浏览器验证
-
-在 Chrome/Firefox 中打开 `https://your-domain.com`
-
-检查项：
-- ✅ 3D 指挥室正常渲染
-- ✅ 鼠标中键可以旋转视角
-- ✅ 主题切换 (深色/浅色/跟随系统)
-- ✅ 语言切换 (10 种语言)
-- ✅ 提交 SOP 后专家节点出现
-- ✅ 决策后风险路径实时更新
-
-#### 3.2 移动浏览器验证
-
-在移动设备或开发者工具移动模式下检查：
-
-检查项：
-- ✅ 单 Canvas 渲染
-- ✅ 无横向溢出
-- ✅ 按钮触摸目标 ≥ 44px
-- ✅ 3D 视角移动降级
-- ✅ 主题和语言选择器可用
-
-#### 3.3 控制台检查
-
-打开浏览器开发者工具 Console：
-
-检查项：
-- ✅ 零错误
-- ✅ 无 API Key 泄露警告
-- ✅ 无 WebGL 错误
-- ✅ 无未捕获的 Promise rejection
-
-### 4. 安全验证
-
-#### 4.1 输入验证测试
+部署候选版本后运行：
 
 ```bash
-# 发送无效 JSON
-curl -X POST https://your-domain.com/a2mcp/generate-rehearsal \
-  -H "Content-Type: application/json" \
-  -d 'invalid json'
+pnpm verify:listing -- https://sopscape-production.up.railway.app
 ```
 
-预期：返回 HTTP 400 Bad Request
+它验证：
 
-```bash
-# 发送空内容
-curl -X POST https://your-domain.com/a2mcp/generate-rehearsal \
-  -H "Content-Type: application/json" \
-  -d '{"title":"","content":""}'
+- HTTPS Web 与健康检查
+- Readiness 200
+- 非法输入 400
+- 免费 A2MCP 直接返回 200
+- 结构化 Council 结果
+- 没有 x402 支付挑战头
+- `/mcp` 仍受 Bearer Token 保护
+
+## Onchain OS 注册
+
+安装并登录：
+
+```text
+通过 npx skills add okx/onchainos-skills --yes -g 安装 Onchain OS，完成后用邮箱登录 Agentic Wallet。
 ```
 
-预期：返回 HTTP 400 with VALIDATION_ERROR
+注册提示词：
 
-#### 4.2 58 秒 Deadline 验证
+```text
+帮我使用 Onchain OS 的 OKX Agent Identity 在 OKX.AI 注册一个 A2MCP 类型的 ASP。
 
-在代码中启用 SlowFakeProvider 或网络延迟模拟：
-
-预期：58 秒后返回 HTTP 504 Gateway Timeout
-
-### 5. 性能验证
-
-#### 5.1 响应时间测试
-
-```bash
-# 测量平均响应时间
-time curl -X POST https://your-domain.com/a2mcp/generate-rehearsal \
-  -H "Content-Type: application/json" \
-  -d '{"title":"test","content":"test content"}'
+服务名称：SOPscape Council
+价格：0
+Endpoint：https://sopscape-production.up.railway.app/a2mcp/generate-rehearsal
+描述：将静态 SOP 转换为由三名专业 AI 代理共同审查的风险决策演练，返回共识、分歧、证据缺口、建议路径和结构化决策节点，适用于安全培训、流程审查与团队演练。
 ```
 
-预期：响应时间 < 10 秒 (真实模型)
+提交上架：
 
-#### 5.2 并发测试
-
-```bash
-# 安装 Apache Bench
-sudo apt install apache2-utils
-
-# 10 个并发用户，总共 100 个请求
-ab -n 100 -c 10 -T 'application/json' \
-  -p test-data.json \
-  https://your-domain.com/a2mcp/generate-rehearsal
+```text
+帮我将刚刚注册的 SOPscape Council ASP 上架到 OKX.AI。
 ```
 
-预期：无 5xx 错误，95% 请求成功
+## 审核通过证据
 
-## 常见问题排查
+保存以下内容：
 
-### 问题 1：模型 API 超时
+- ASP 注册 ID
+- 上架页面 URL
+- 审核提交时间
+- 审核通过邮件截图
+- Marketplace 在线页面截图
+- OKX.AI 内实际调用成功截图
+- Endpoint 调用日志时间与 requestId
 
-```bash
-# 检查 MODEL_BASE_URL 连通性
-curl -I $MODEL_BASE_URL
-
-# 检查 API Key 有效性
-curl -X POST $MODEL_BASE_URL/chat/completions \
-  -H "Authorization: Bearer $MODEL_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"test"}]}'
-```
-
-### 问题 2：HTTPS 证书问题
-
-```bash
-# 检查证书有效期
-openssl s_client -connect your-domain.com:443 | openssl x509 -noout -dates
-
-# 更新证书
-sudo certbot renew
-sudo systemctl reload nginx
-```
-
-## 上架前最终检查
-
-运行完整的验证脚本：
-
-```bash
-#!/bin/bash
-
-echo "=== SOPscape OKX.AI Listing Verification ==="
-
-echo "1. Checking HTTPS..."
-curl -sI https://your-domain.com | head -1
-
-echo "2. Checking health endpoint..."
-curl -s https://your-domain.com/health/live
-
-echo "3. Testing A2MCP generate-rehearsal..."
-curl -sX POST https://your-domain.com/a2mcp/generate-rehearsal \
-  -H "Content-Type: application/json" \
-  -d '{"title":"test","content":"test content"}' | head -20
-
-echo "4. Checking response headers..."
-curl -sI https://your-domain.com | grep -E "Content-Security|X-Frame|X-Content"
-
-echo "=== Verification Complete ==="
-```
-
-## 通过标准
-
-所有检查项都通过 ✅ 后，即可提交 OKX.AI 上架申请：
-
-- ✅ HTTPS 证书有效
-- ✅ 所有 A2MCP 端点正常响应
-- ✅ Web 应用在桌面和移动端正常工作
-- ✅ 控制台零错误
-- ✅ 安全配置正确
-- ✅ 性能稳定
-- ✅ 58 秒 Deadline 生效
-- ✅ 输入验证正常
+只有 ASP 审核通过并上线，Hackathon 提交才有效。

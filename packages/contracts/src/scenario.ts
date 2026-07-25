@@ -43,7 +43,7 @@ export const ScenarioPhaseSchema = z
   })
   .strict();
 
-export const ScenarioMetadataSchema = z
+export const ScenarioProfileSchema = z
   .object({
     difficulty: DifficultyLevelSchema,
     estimatedMinutes: z.number().int().positive(),
@@ -60,7 +60,7 @@ export const ScenarioSchema = z
     title: z.string().min(1),
     description: z.string().min(1),
     phases: z.array(ScenarioPhaseSchema).min(1).max(20),
-    metadata: ScenarioMetadataSchema,
+    metadata: ScenarioProfileSchema,
     createdAt: z.string().datetime().optional(),
   })
   .strict();
@@ -70,5 +70,5 @@ export type DecisionOption = z.infer<typeof DecisionOptionSchema>;
 export type PhaseConsequence = z.infer<typeof PhaseConsequenceSchema>;
 export type PhaseScoring = z.infer<typeof PhaseScoringSchema>;
 export type ScenarioPhase = z.infer<typeof ScenarioPhaseSchema>;
-export type ScenarioMetadata = z.infer<typeof ScenarioMetadataSchema>;
+export type ScenarioProfile = z.infer<typeof ScenarioProfileSchema>;
 export type Scenario = z.infer<typeof ScenarioSchema>;

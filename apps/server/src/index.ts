@@ -1,13 +1,14 @@
 import { buildApp } from './app.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
+const HOST = process.env.HOST ?? '0.0.0.0';
+async function start() {
+  const app = buildApp();
+  await app.listen({ port: PORT, host: HOST });
+  app.log.info(`SOPscape server listening on http://${HOST}:${PORT}`);
+}
 
-const app = buildApp();
-
-app
-  .listen({ port: PORT, host: '0.0.0.0' })
-  .then(() => app.log.info(`SOPscape server listening on :${PORT}`))
-  .catch((err) => {
-    app.log.error(err);
-    process.exit(1);
-  });
+start().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

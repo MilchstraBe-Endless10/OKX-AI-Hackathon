@@ -9,6 +9,18 @@
  *   reduced-motion: no camera travel, no pulsing, instant transitions
  */
 
+export interface OrbitAngles {
+  yaw: number;
+  pitch: number;
+}
+
+export function getNextOrbit(current: OrbitAngles, deltaX: number, deltaY: number): OrbitAngles {
+  return {
+    yaw: current.yaw - deltaX * 0.005,
+    pitch: Math.min(0.85, Math.max(-0.3, current.pitch - deltaY * 0.005)),
+  };
+}
+
 export interface QualityProfile {
   dpr: number;
   reducedMotion: boolean;

@@ -1,16 +1,40 @@
 import { useState, type FormEvent } from 'react';
 import { SopInputSchema, type SopInput as SopInputValue } from '@sopscape/contracts';
+import { getMessages, type AppMessages, type LocaleCode } from '../lib/preferences';
+import { productApi } from '../lib/product-api';
 
 const MAX_CONTENT_BYTES = 60_000;
 
 interface SopInputProps {
   onSubmit: (input: SopInputValue) => void;
+  locale?: LocaleCode;
+  messages?: AppMessages;
 }
 
-export default function SopInput({ onSubmit }: SopInputProps) {
+export default function SopInput({ onSubmit, locale = 'zh-CN', messages }: SopInputProps) {
+  const copy = messages ?? getMessages(locale);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  async function importFile(file: File | undefined) {
+    if (!file) return;
+    setValidationError(null);
+    const binary = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.docx');
+    if (file.size > (binary ? 5 * 1024 * 1024 : MAX_CONTENT_BYTES)) {
+      setValidationError(
+        `文件超过 ${binary ? '5 MiB' : `${MAX_CONTENT_BYTES.toLocaleString()} 字节`}限制`,
+      );
+      return;
+    }
+    try {
+      const imported = binary ? await productApi.convertDocument(file) : await file.text();
+      setTitle((current) => current || file.name.replace(/\.[^.]+$/, ''));
+      setContent(imported);
+    } catch (reason) {
+      setValidationError(reason instanceof Error ? reason.message : '文档解析失败');
+    }
+  }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -19,10 +43,10 @@ export default function SopInput({ onSubmit }: SopInputProps) {
     const parsed = SopInputSchema.safeParse({
       title: title.trim(),
       content,
-      locale: 'zh-CN',
+      locale,
     });
     if (!parsed.success) {
-      setValidationError(parsed.error.issues[0]?.message ?? 'Invalid SOP input');
+      setValidationError(parsed.error.issues[0]?.message ?? copy.inputHeading);
       return;
     }
 
@@ -37,15 +61,26 @@ export default function SopInput({ onSubmit }: SopInputProps) {
       onSubmit={handleSubmit}
       className="bg-surface/90 backdrop-blur rounded-lg border border-border p-4 space-y-4"
     >
-      <h2 className="text-base font-semibold text-slate-100">Submit SOP</h2>
+      <h2 className="text-base font-semibold text-slate-100">{copy.inputHeading}</h2>
+
+      <label className="file-import">
+        <span>导入 SOP 文件</span>
+        <input
+          type="file"
+          accept=".txt,.md,.json,.csv,.eml,.pdf,.docx,text/plain,text/markdown,message/rfc822,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          onChange={(event) => void importFile(event.target.files?.[0])}
+          data-testid="sop-file"
+        />
+        <small>TXT / Markdown / JSON / CSV / EML / PDF / DOCX</small>
+      </label>
 
       <label className="block space-y-1">
-        <span className="text-sm text-slate-300">Title</span>
+        <span className="text-sm text-slate-300">{copy.title}</span>
         <input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g., Phishing Email Response SOP"
+          placeholder={`${copy.title}…`}
           className="w-full px-3 py-2 bg-navy-800 border border-border rounded-md text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500"
           aria-describedby="title-help"
           maxLength={200}
@@ -57,11 +92,11 @@ export default function SopInput({ onSubmit }: SopInputProps) {
       </label>
 
       <label className="block space-y-1">
-        <span className="text-sm text-slate-300">SOP Content</span>
+        <span className="text-sm text-slate-300">{copy.content}</span>
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="Paste your SOP text here…"
+          placeholder={`${copy.content}…`}
           rows={8}
           className="w-full px-3 py-2 bg-navy-800 border border-border rounded-md text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 resize-y"
           aria-describedby="byte-counter"
@@ -75,7 +110,7 @@ export default function SopInput({ onSubmit }: SopInputProps) {
             />
           </div>
           <span className="text-xs text-slate-500 font-mono">
-            {byteLen.toLocaleString()} / {MAX_CONTENT_BYTES.toLocaleString()} bytes
+            {byteLen.toLocaleString()} / {MAX_CONTENT_BYTES.toLocaleString()} {copy.byteUnit}
           </span>
         </div>
       </label>
@@ -95,7 +130,7 @@ export default function SopInput({ onSubmit }: SopInputProps) {
         disabled={!title.trim() || !content.trim()}
         data-testid="submit-sop"
       >
-        Start Rehearsal
+        {copy.start}
       </button>
     </form>
   );

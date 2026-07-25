@@ -18,11 +18,45 @@ export type GenerationPhase =
   | 'MODERATING'
   | 'PERSISTING'
   | 'READY'
+  | 'PARTIAL_FAILED'
   | 'FAILED'
   | 'CANCELLED'
   | 'EXPIRED';
 
 export type UIPhase = GenerationPhase | 'idle';
+
+export interface A2mcpProblemDetails {
+  type?: string;
+  title?: string;
+  status?: number;
+  detail?: string;
+  message?: string;
+  instance?: string;
+  code?: string;
+  requestId?: string;
+  rehearsalId?: string;
+  rehearsalStatus?: string;
+  failedExperts?: Array<{ expert?: string; errorType?: string; attemptCount?: number }>;
+  retryable?: boolean;
+}
+
+export class A2mcpError extends Error {
+  readonly status: number;
+  readonly problem: A2mcpProblemDetails;
+
+  constructor(status: number, problem: A2mcpProblemDetails) {
+    super(problem.detail ?? problem.message ?? defaultErrorMessage(status));
+    this.name = 'A2mcpError';
+    this.status = status;
+    this.problem = problem;
+  }
+}
+
+function defaultErrorMessage(status: number): string {
+  if (status === 502) return '专家恢复失败，未生成完整演练。';
+  if (status === 504) return '演练超过 58 秒截止时间。';
+  return `A2MCP request failed (${status})`;
+}
 
 /** Map server status string → UI phase. Single source of truth. */
 export function statusToPhase(status: string): GenerationPhase {
@@ -40,6 +74,8 @@ export function statusToPhase(status: string): GenerationPhase {
       return 'PERSISTING';
     case 'READY':
       return 'READY';
+    case 'PARTIAL_FAILED':
+      return 'PARTIAL_FAILED';
     case 'FAILED':
       return 'FAILED';
     case 'CANCELLED':
@@ -64,13 +100,15 @@ export interface A2mcpResponse {
   rehearsalId: string;
   status: 'READY';
   council: CouncilResult;
+  passport?: SopPassport;
+  sop?: SopRecord;
 }
 
 export async function generateRehearsal(
   input: SopInput,
   request: typeof fetch = fetch,
 ): Promise<A2mcpResponse> {
-  const response = await request('/a2mcp/generate-rehearsal', {
+  const response = await request('/api/generate-rehearsal', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -78,21 +116,27 @@ export async function generateRehearsal(
   const body: unknown = await response.json().catch(() => null);
 
   if (!response.ok) {
-    const message =
-      body && typeof body === 'object' && 'message' in body && typeof body.message === 'string'
-        ? body.message
-        : `A2MCP request failed (${response.status})`;
-    throw new Error(message);
+    const problem =
+      body && typeof body === 'object'
+        ? (body as A2mcpProblemDetails)
+        : ({} as A2mcpProblemDetails);
+    throw new A2mcpError(response.status, problem);
   }
   if (!body || typeof body !== 'object') throw new Error('Invalid A2MCP response');
 
-  const { rehearsalId, status, ...councilData } = body as Record<string, unknown>;
+  const { rehearsalId, status, passport, sop, ...councilData } = body as Record<string, unknown>;
   const council = CouncilResultSchema.safeParse(councilData);
   if (typeof rehearsalId !== 'string' || status !== 'READY' || !council.success) {
     throw new Error('Invalid A2MCP response');
   }
 
-  return { rehearsalId, status, council: council.data };
+  return {
+    rehearsalId,
+    status,
+    council: council.data,
+    passport: passport as SopPassport | undefined,
+    sop: sop as SopRecord | undefined,
+  };
 }
 
 export function councilToScene(council: CouncilResult): Scene {
@@ -136,5 +180,7 @@ import {
   SceneSchema,
   type CouncilResult,
   type Scene,
+  type SopPassport,
+  type SopRecord,
   type SopInput,
 } from '@sopscape/contracts';
