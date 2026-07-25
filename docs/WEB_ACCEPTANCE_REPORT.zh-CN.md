@@ -8,7 +8,7 @@
 
 | 项目 | 结果 | 证据 |
 | --- | --- | --- |
-| Web Vitest | 37/37 | `pnpm --filter @sopscape/web test -- --run --maxWorkers=1 --minWorkers=1` |
+| Web Vitest | 38/38 | `pnpm --filter @sopscape/web test -- --run --maxWorkers=1 --minWorkers=1` |
 | Web TypeScript | 通过 | `pnpm --filter @sopscape/web typecheck` |
 | Web Build | 通过 | `pnpm --filter @sopscape/web build` |
 | ESLint | 通过 | `pnpm exec eslint apps/web/src` |
@@ -23,7 +23,7 @@
 
 ## 生产环境观察
 
-生产首页和 `/health/ready` 可访问，页面静态资源加载正常。生产登录流程当前返回 HTTP 401，因此登录后的完整流程尚未获得有效证据：
+生产首页和 `/health/ready` 可访问，页面静态资源加载正常。登录失败现在会在身份对话框内以可访问的 alert 呈现；生产登录流程当前返回 HTTP 401，因此登录后的完整流程尚未获得有效证据：
 
 ```text
 登录 → 提交 SOP → 三专家结果 → 决策 → 数字护照 → 历史 → 分享
