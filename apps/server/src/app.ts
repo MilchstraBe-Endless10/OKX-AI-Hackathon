@@ -6,6 +6,7 @@ import {
   type CouncilResult,
   type Finding,
   type AgentRole,
+  type SopInput,
 } from '@sopscape/contracts';
 import { startGeneration } from '@sopscape/core';
 import {
@@ -88,7 +89,7 @@ function getLLMConfig(): {
 
 interface ExerciseState {
   rehearsalId: string;
-  input: { title: string; content: string; locale?: string };
+  input: SopInput;
   retryCount: number;
   running: boolean;
   savedFindings: Finding[];
@@ -869,7 +870,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         if (result.status === 'READY') {
           const councilValid = CouncilResultSchema.safeParse(result.council);
           if (councilValid.success) {
-            const sop = store.createSop(exercise.input as any, councilValid.data);
+            const sop = store.createSop(exercise.input, councilValid.data);
             store.saveRehearsal(
               result.originalRehearsalId ?? result.rehearsalId ?? rehearsalId,
               councilValid.data,
