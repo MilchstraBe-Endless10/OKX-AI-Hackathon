@@ -136,12 +136,16 @@ export class LLMProvider {
       if (attempt > 0) {
         await new Promise((r) => setTimeout(r, 500 * attempt));
       }
-      const raw = await this.callOneAttempt(prompt, this.config.model, signal);
+      const raw = await this.safeCallOneAttempt(prompt, this.config.model, signal);
       const finding = parseFinding(raw);
       if (finding) return finding;
       // Schema invalid — try fallback on last retry
       if (attempt === MAX_RETRIES && this.config.fallbackModel) {
-        const fallbackRaw = await this.callOneAttempt(prompt, this.config.fallbackModel, signal);
+        const fallbackRaw = await this.safeCallOneAttempt(
+          prompt,
+          this.config.fallbackModel,
+          signal,
+        );
         const fallbackFinding = parseFinding(fallbackRaw);
         if (fallbackFinding) return fallbackFinding;
       }
@@ -161,12 +165,16 @@ export class LLMProvider {
       if (attempt > 0) {
         await new Promise((r) => setTimeout(r, 500 * attempt));
       }
-      const raw = await this.callOneAttempt(prompt, this.config.model, signal);
+      const raw = await this.safeCallOneAttempt(prompt, this.config.model, signal);
       const validated = parseCouncil(raw);
       if (validated) return validated;
       // Schema invalid — try fallback on last retry
       if (attempt === MAX_RETRIES && this.config.fallbackModel) {
-        const fallbackRaw = await this.callOneAttempt(prompt, this.config.fallbackModel, signal);
+        const fallbackRaw = await this.safeCallOneAttempt(
+          prompt,
+          this.config.fallbackModel,
+          signal,
+        );
         const fallbackValidated = parseCouncil(fallbackRaw);
         if (fallbackValidated) return fallbackValidated;
       }
@@ -249,6 +257,18 @@ export class LLMProvider {
       return JSON.parse(cleaned) as Record<string, unknown>;
     } finally {
       clearTimeout(timeout);
+    }
+  }
+
+  private async safeCallOneAttempt(
+    prompt: string,
+    modelName: string,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    try {
+      return await this.callOneAttempt(prompt, modelName, signal);
+    } catch {
+      return null;
     }
   }
 

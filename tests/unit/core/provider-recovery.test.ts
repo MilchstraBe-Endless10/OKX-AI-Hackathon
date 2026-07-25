@@ -1,7 +1,7 @@
 // Provider recovery chain unit tests
 // Tests: LLMProvider retry, partial failure, parseFinding actually called
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { LLMProvider, parseFinding, FakeProvider } from '@sopscape/core';
 import { startGeneration } from '@sopscape/core';
 
@@ -37,6 +37,25 @@ describe('LLMProvider', () => {
       abortSignal: undefined,
     } satisfies Parameters<typeof LLMProvider.prototype.runSpecialists>[1]);
     expect(result.failures.length).toBeGreaterThan(0);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('converts upstream call errors into specialist failures for recovery', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('rate limited', { status: 429 })),
+    );
+    const provider = new LLMProvider({ ...mockConfig, fallbackModel: 'fallback-model' });
+    const result = await provider.runSpecialists(
+      { title: 'test', content: 'test content' },
+      { startAttempt: () => {}, abortSignal: undefined },
+    );
+
+    expect(result.successes).toHaveLength(0);
+    expect(result.failures).toHaveLength(3);
   });
 
   it.skip('respects AbortSignal during specialist calls', async () => {
