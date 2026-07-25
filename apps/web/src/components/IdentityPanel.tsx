@@ -137,7 +137,11 @@ export default function IdentityPanel({
             required
           />
         </label>
-        {error && <div className="product-alert">{error}</div>}
+        {error && (
+          <div className="product-alert" role="alert" aria-live="assertive">
+            {error}
+          </div>
+        )}
         <button type="submit">{invitationToken ? '加入工作区' : '安全登录'}</button>
       </form>
     </div>
