@@ -6,6 +6,7 @@ import {
   type CouncilResult,
   type Finding,
   type AgentRole,
+  type SopInput,
 } from '@sopscape/contracts';
 import { startGeneration } from '@sopscape/core';
 import {
@@ -74,13 +75,21 @@ function getLLMConfig(): {
   baseUrl: string;
   model: string;
   fallbackModel?: string;
+  fallbackBaseUrl?: string;
 } | null {
   const apiKey = process.env.MODEL_API_KEY;
   const baseUrl = process.env.MODEL_BASE_URL;
   const model = process.env.MODEL_NAME;
   const fallbackModel = process.env.MODEL_FALLBACK_NAME;
+  const fallbackBaseUrl = process.env.MODEL_FALLBACK_BASE_URL;
   return apiKey && baseUrl && model
-    ? { apiKey, baseUrl, model, fallbackModel: fallbackModel || undefined }
+    ? {
+        apiKey,
+        baseUrl,
+        model,
+        fallbackModel: fallbackModel || undefined,
+        fallbackBaseUrl: fallbackBaseUrl || undefined,
+      }
     : null;
 }
 
@@ -88,7 +97,7 @@ function getLLMConfig(): {
 
 interface ExerciseState {
   rehearsalId: string;
-  input: { title: string; content: string; locale?: string };
+  input: SopInput;
   retryCount: number;
   running: boolean;
   savedFindings: Finding[];
@@ -262,13 +271,16 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       (request.url.startsWith('/a2mcp/') || request.url.startsWith('/mcp')) &&
       request.headers.authorization !== `Bearer ${serviceApiKey}`
     ) {
-      return reply.code(401).send(apiError('UNAUTHORIZED', 'Valid bearer token required'));
+      return reply
+        .code(401)
+        .send(problemDetails('unauthorized', 'Unauthorized', 401, 'Valid bearer token required'));
     }
     if (
       requireAuth &&
       path.startsWith('/api/') &&
       !publicApiPaths.has(path) &&
-      !path.startsWith('/api/shares/')
+      !path.startsWith('/api/shares/') &&
+      !/\/api\/rehearsals\/[^/]+\/retry-failed-experts$/.test(path)
     ) {
       const token = readCookie(request.headers.cookie, sessionCookieName);
       const member = token ? store.memberForSession(token) : null;
@@ -299,6 +311,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.addHook('onSend', async (_request, reply, payload) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
+    reply.header('X-XSS-Protection', '0');
     reply.header('Referrer-Policy', 'no-referrer');
     reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     reply.header(
@@ -869,7 +882,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         if (result.status === 'READY') {
           const councilValid = CouncilResultSchema.safeParse(result.council);
           if (councilValid.success) {
-            const sop = store.createSop(exercise.input as any, councilValid.data);
+            const sop = store.createSop(exercise.input, councilValid.data);
             store.saveRehearsal(
               result.originalRehearsalId ?? result.rehearsalId ?? rehearsalId,
               councilValid.data,

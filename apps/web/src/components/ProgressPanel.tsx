@@ -1,33 +1,42 @@
 import { GenerationPhase } from '../lib/api';
+import { getMessages, type AppMessages } from '../lib/preferences';
 
-const EXPERT_ROLES: { role: string; label: string }[] = [
-  { role: 'procedure-analyst', label: 'Procedure Analyst' },
-  { role: 'risk-challenger', label: 'Risk Challenger' },
-  { role: 'evidence-auditor', label: 'Evidence Auditor' },
+const EXPERT_ROLES: { role: string; message: keyof AppMessages }[] = [
+  { role: 'procedure-analyst', message: 'procedureSeat' },
+  { role: 'risk-challenger', message: 'riskSeat' },
+  { role: 'evidence-auditor', message: 'evidenceSeat' },
 ];
 
 interface ProgressPanelProps {
   phase: GenerationPhase;
   rehearsalId: string | null;
+  messages?: AppMessages;
 }
 
-export default function ProgressPanel({ phase, rehearsalId }: ProgressPanelProps) {
+export default function ProgressPanel({ phase, rehearsalId, messages }: ProgressPanelProps) {
+  const copy = messages ?? getMessages('zh-CN');
   return (
     <div className="bg-surface/90 backdrop-blur rounded-lg border border-border p-4 space-y-4">
-      <h2 className="text-base font-semibold text-slate-100">Analysis Progress</h2>
+      <h2 className="text-base font-semibold text-slate-100">{copy.progressTitle}</h2>
 
       {/* Phase indicator */}
       <div className="flex items-center gap-2">
         <PhaseDot phase={phase} />
         <span className="text-sm text-slate-300" data-testid="current-phase">
-          {phaseLabel(phase)}
+          {phaseLabel(phase, copy)}
         </span>
       </div>
 
       {/* Expert status cards */}
-      <div className="space-y-2" role="region" aria-label="Expert analysis status">
-        {EXPERT_ROLES.map(({ role, label }) => (
-          <ExpertStatusCard key={role} role={role} label={label} phase={phase} />
+      <div className="space-y-2" role="region" aria-label={copy.expertStatusLabel}>
+        {EXPERT_ROLES.map(({ role, message }) => (
+          <ExpertStatusCard
+            key={role}
+            role={role}
+            label={copy[message]}
+            phase={phase}
+            messages={copy}
+          />
         ))}
       </div>
 
@@ -74,18 +83,20 @@ function ExpertStatusCard({
   role,
   label,
   phase,
+  messages,
 }: {
   role: string;
   label: string;
   phase: GenerationPhase;
+  messages: AppMessages;
 }) {
-  const status = expertStatus(phase);
+  const status = expertStatus(phase, messages);
 
   return (
     <div className="flex items-center justify-between px-3 py-2 bg-navy-800/50 rounded-md border border-border">
       <span className="text-sm text-slate-200">{label}</span>
       <span
-        className={`text-xs font-mono uppercase ${statusColor(status)}`}
+        className={`text-xs font-mono uppercase ${statusColor(phase)}`}
         data-testid={`expert-${role}-status`}
       >
         {status}
@@ -94,60 +105,64 @@ function ExpertStatusCard({
   );
 }
 
-function expertStatus(phase: GenerationPhase): string {
+function expertStatus(phase: GenerationPhase, messages: AppMessages): string {
   switch (phase) {
     case 'QUEUED':
-      return 'waiting';
+      return messages.statusWaiting;
     case 'COMPRESSING':
-      return 'waiting';
+      return messages.statusWaiting;
     case 'SPECIALISTS_RUNNING':
-      return 'running';
+      return messages.statusRunning;
     case 'MODERATING':
-      return 'complete';
+      return messages.statusComplete;
     case 'PERSISTING':
-      return 'complete';
+      return messages.statusComplete;
     case 'READY':
-      return 'complete';
+      return messages.statusComplete;
     case 'FAILED':
     case 'PARTIAL_FAILED':
-      return 'failed';
+      return messages.statusFailed;
     case 'CANCELLED':
     case 'EXPIRED':
-      return 'cancelled';
+      return messages.statusCancelled;
     default:
-      return 'unknown';
+      return messages.statusWaiting;
   }
 }
 
-function statusColor(status: string): string {
-  switch (status) {
-    case 'waiting':
+function statusColor(phase: GenerationPhase): string {
+  switch (phase) {
+    case 'QUEUED':
+    case 'COMPRESSING':
+    case 'CANCELLED':
+    case 'EXPIRED':
       return 'text-slate-500';
-    case 'running':
+    case 'SPECIALISTS_RUNNING':
       return 'text-teal-500';
-    case 'complete':
+    case 'MODERATING':
+    case 'PERSISTING':
+    case 'READY':
       return 'text-safe';
-    case 'failed':
+    case 'FAILED':
+    case 'PARTIAL_FAILED':
       return 'text-danger';
-    case 'cancelled':
-      return 'text-slate-500';
     default:
       return 'text-slate-400';
   }
 }
 
-function phaseLabel(phase: GenerationPhase): string {
+function phaseLabel(phase: GenerationPhase, messages: AppMessages): string {
   const labels: Record<GenerationPhase, string> = {
-    QUEUED: 'Queued',
-    COMPRESSING: 'Compressing SOP',
-    SPECIALISTS_RUNNING: 'Experts analyzing',
-    MODERATING: 'Synthesizing results',
-    PERSISTING: 'Saving results',
-    READY: 'Results ready',
-    PARTIAL_FAILED: 'Partial failure — retry required',
-    FAILED: 'Analysis failed',
-    CANCELLED: 'Cancelled',
-    EXPIRED: 'Expired',
+    QUEUED: messages.statusWaiting,
+    COMPRESSING: messages.statusWaiting,
+    SPECIALISTS_RUNNING: messages.statusRunning,
+    MODERATING: messages.statusComplete,
+    PERSISTING: messages.statusComplete,
+    READY: messages.resultReady,
+    PARTIAL_FAILED: messages.statusFailed,
+    FAILED: messages.statusFailed,
+    CANCELLED: messages.statusCancelled,
+    EXPIRED: messages.statusCancelled,
   };
   return labels[phase];
 }

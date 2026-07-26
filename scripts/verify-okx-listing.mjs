@@ -1,6 +1,10 @@
 /* global AbortSignal, console, fetch, performance, process */
 
-const base = (process.argv[2] ?? process.env.SOPSCAPE_PUBLIC_URL ?? '').replace(/\/$/, '');
+const base = (
+  process.argv[2] === '--'
+    ? process.argv[3]
+    : (process.argv[2] ?? process.env.SOPSCAPE_PUBLIC_URL ?? '')
+).replace(/\/$/, '');
 if (!base.startsWith('https://')) {
   throw new Error('Pass an HTTPS URL: pnpm verify:listing -- https://example.com');
 }

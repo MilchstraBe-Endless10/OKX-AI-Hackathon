@@ -1,9 +1,8 @@
 // Retry permission and behavior tests
 // Tests: auth required, exercise tracking, retry limits, concurrent prevention
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { buildApp } from '@sopscape/server';
-import type { FastifyInstance } from 'fastify';
 
 describe('Retry endpoint auth', () => {
   it('rejects retry for non-existent rehearsal (404)', async () => {
