@@ -1511,6 +1511,7 @@ textarea:focus-visible,
   display: grid;
   place-items: center;
   padding: 20px;
+  overflow: auto;
   background: rgba(2, 8, 18, 0.82);
   backdrop-filter: blur(16px);
 }
@@ -1518,6 +1519,7 @@ textarea:focus-visible,
   display: grid;
   gap: 14px;
   width: min(430px, 100%);
+  box-sizing: border-box;
   max-width: calc(100vw - 40px);
   min-width: 0;
   padding: 28px;
@@ -1614,6 +1616,7 @@ textarea:focus-visible,
   .share-card,
   .team-card {
     width: calc(100vw - 40px);
+    box-sizing: border-box;
   }
   .product-kpis,
   .evidence-summary,
