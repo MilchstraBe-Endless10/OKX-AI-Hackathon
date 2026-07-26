@@ -44,4 +44,15 @@ describe('App', () => {
     const aside = screen.getAllByRole('complementary');
     expect(aside.length).toBe(2);
   });
+
+  test('opens the guide and loads the local phishing demo without calling the API', () => {
+    render(<App />);
+    fireEvent.click(screen.getByTestId('guide-trigger'));
+    expect(screen.getByRole('dialog')).toHaveTextContent('演示与操作指南');
+
+    fireEvent.click(screen.getByTestId('load-demo'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('钓鱼邮件处置演示')).toBeInTheDocument();
+    expect(screen.getByText('议会结果')).toBeInTheDocument();
+  });
 });

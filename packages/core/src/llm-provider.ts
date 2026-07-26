@@ -1,6 +1,7 @@
 // @sopscape/core — LLM provider with retry chain, fallback, and Zod validation
-// ponytail: primary model → same-model retry → glm-4.6 fallback.
+// ponytail: primary model → same-model retry → fallback model (separate baseUrl to avoid shared rate limit).
 // 30s timeout per call, 1 retry, Zod schema validation at every step.
+// Sequential specialists: avoids burst QPS triggering rate limits.
 
 import {
   FindingSchema,
@@ -28,6 +29,7 @@ export interface LLMConfig {
   baseUrl: string;
   model: string;
   fallbackModel?: string; // e.g. 'glm-4.6' — used on primary failure
+  fallbackBaseUrl?: string; // separate provider URL for fallback (avoids shared rate limit)
   timeoutMs?: number;
 }
 
@@ -86,17 +88,20 @@ export class LLMProvider {
     successes: { role: Role; finding: Finding }[];
     failures: { role: Role; error: string }[];
   }> {
-    const results = await Promise.all(
-      roles.map(async (role) => {
-        if (signal?.aborted) return { role, error: 'ABORTED' } as const;
-        const finding = await this.callWithRoleValidation(
-          this.buildSpecialistPrompt(role, input),
-          signal,
-        );
-        if (finding) return { role, finding };
-        return { role, error: 'SCHEMA_OR_CALL_FAILED' } as const;
-      }),
-    );
+    // Sequential: avoids burst QPS triggering rate limits
+    const results: Array<{ role: Role; finding?: Finding; error?: string }> = [];
+    for (const role of roles) {
+      if (signal?.aborted) break;
+      const finding = await this.callWithRoleValidation(
+        this.buildSpecialistPrompt(role, input),
+        signal,
+      );
+      if (finding) {
+        results.push({ role, finding });
+      } else {
+        results.push({ role, error: 'SCHEMA_OR_CALL_FAILED' });
+      }
+    }
 
     const successes: { role: Role; finding: Finding }[] = [];
     const failures: { role: Role; error: string }[] = [];
@@ -104,7 +109,7 @@ export class LLMProvider {
       if ('finding' in r && r.finding) {
         successes.push({ role: r.role, finding: r.finding });
       } else {
-        failures.push({ role: r.role, error: r.error });
+        failures.push({ role: r.role, error: r.error ?? 'UNKNOWN' });
       }
     }
     return { successes, failures };
@@ -136,12 +141,17 @@ export class LLMProvider {
       if (attempt > 0) {
         await new Promise((r) => setTimeout(r, 500 * attempt));
       }
-      const raw = await this.callOneAttempt(prompt, this.config.model, signal);
+      const raw = await this.safeCallOneAttempt(prompt, this.config.model, signal);
       const finding = parseFinding(raw);
       if (finding) return finding;
       // Schema invalid — try fallback on last retry
       if (attempt === MAX_RETRIES && this.config.fallbackModel) {
-        const fallbackRaw = await this.callOneAttempt(prompt, this.config.fallbackModel, signal);
+        const fallbackRaw = await this.safeCallOneAttempt(
+          prompt,
+          this.config.fallbackModel,
+          signal,
+          true,
+        );
         const fallbackFinding = parseFinding(fallbackRaw);
         if (fallbackFinding) return fallbackFinding;
       }
@@ -161,12 +171,17 @@ export class LLMProvider {
       if (attempt > 0) {
         await new Promise((r) => setTimeout(r, 500 * attempt));
       }
-      const raw = await this.callOneAttempt(prompt, this.config.model, signal);
+      const raw = await this.safeCallOneAttempt(prompt, this.config.model, signal);
       const validated = parseCouncil(raw);
       if (validated) return validated;
       // Schema invalid — try fallback on last retry
       if (attempt === MAX_RETRIES && this.config.fallbackModel) {
-        const fallbackRaw = await this.callOneAttempt(prompt, this.config.fallbackModel, signal);
+        const fallbackRaw = await this.safeCallOneAttempt(
+          prompt,
+          this.config.fallbackModel,
+          signal,
+          true,
+        );
         const fallbackValidated = parseCouncil(fallbackRaw);
         if (fallbackValidated) return fallbackValidated;
       }
@@ -178,16 +193,19 @@ export class LLMProvider {
     prompt: string,
     modelName: string,
     signal?: AbortSignal,
+    useFallback?: boolean,
   ): Promise<unknown> {
     const timeoutMs = this.config.timeoutMs ?? CALL_TIMEOUT_MS;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     signal?.addEventListener('abort', () => controller.abort(), { once: true });
 
-    const isAnthropic = this.config.baseUrl.includes('anthropic');
-    const url = isAnthropic
-      ? `${this.config.baseUrl}/v1/messages`
-      : `${this.config.baseUrl}/chat/completions`;
+    const url =
+      useFallback && this.config.fallbackBaseUrl
+        ? this.config.fallbackBaseUrl
+        : this.config.baseUrl;
+    const isAnthropic = url.includes('anthropic');
+    const endpoint = isAnthropic ? `${url}/v1/messages` : `${url}/chat/completions`;
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     const body: Record<string, unknown> = isAnthropic
@@ -214,7 +232,7 @@ export class LLMProvider {
     }
 
     try {
-      const response = await fetch(url, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -252,17 +270,66 @@ export class LLMProvider {
     }
   }
 
+  private async safeCallOneAttempt(
+    prompt: string,
+    modelName: string,
+    signal?: AbortSignal,
+    useFallback?: boolean,
+  ): Promise<unknown> {
+    try {
+      return await this.callOneAttempt(prompt, modelName, signal, useFallback);
+    } catch {
+      return null;
+    }
+  }
+
   private buildSpecialistPrompt(
     role: Role,
     input: { title: string; content: string; locale?: string },
   ): string {
-    return `${ROLE_PROMPTS[role]}\n\nSOP Title: ${input.title}\nSOP Content: ${input.content}${input.locale ? `\nLocale: ${input.locale}` : ''}\n\nRespond with valid JSON matching the Finding schema.`;
+    return `${ROLE_PROMPTS[role]}
+
+SOP Title: ${input.title}
+SOP Content: ${input.content}${input.locale ? `\nLocale: ${input.locale}` : ''}
+
+Return exactly one JSON object and no markdown. The object must contain every field below:
+{
+  "role": "${role}",
+  "claim": "a specific claim grounded in this SOP",
+  "evidenceRefs": ["quoted step or evidence reference"],
+  "confidence": 0.8,
+  "severity": "low",
+  "affectedStepIds": ["step-1"],
+  "unsupported": false
+}
+Use only these severity values: low, medium, high, critical. Keep arrays valid even when evidence is missing; use [] and set unsupported to true. Do not add fields.`;
   }
 
   private buildModeratorPrompt(findings: Record<Role, Finding>): string {
     const findingsText = Object.values(findings)
       .map((f) => `- ${f.role}: ${f.claim} (confidence: ${f.confidence}, severity: ${f.severity})`)
       .join('\n');
-    return `You are a moderator synthesizing expert findings.\n\nFindings:\n${findingsText}\n\nRespond with valid JSON matching the CouncilResult schema.`;
+    return `You are a moderator synthesizing expert findings.
+
+Findings:
+${findingsText}
+
+Return exactly one JSON object and no markdown with this shape:
+{
+  "consensus": [{
+    "role": "procedure-analyst",
+    "claim": "specific consensus claim",
+    "evidenceRefs": ["finding evidence"],
+    "confidence": 0.8,
+    "severity": "medium",
+    "affectedStepIds": ["step-1"],
+    "unsupported": false
+  }],
+  "disagreements": [{"topic": "topic", "positions": [{"role": "procedure-analyst", "stance": "position"}, {"role": "risk-challenger", "stance": "position"}]}],
+  "evidenceGaps": [{"description": "missing evidence", "refs": ["step-1"]}],
+  "recommendedPath": ["step-1"],
+  "decisionNodes": [{"id": "decision-1", "prompt": "What should happen next?", "options": [{"id": "option-1", "label": "Verify", "consequence": "Evidence is preserved"}]}]
+}
+Use only valid roles and severity values. Arrays may be empty except consensus, which must contain at least one finding. Do not add fields.`;
   }
 }

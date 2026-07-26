@@ -43,6 +43,7 @@
 html {
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
+  overflow-x: clip;
 }
 
 body {
@@ -63,6 +64,7 @@ body {
     'PingFang SC',
     sans-serif;
   -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
 }
 
 button,
@@ -84,7 +86,8 @@ textarea:focus-visible,
 .app-shell {
   display: grid;
   grid-template-columns: 82px minmax(0, 1fr);
-  width: 100vw;
+  width: 100%;
+  max-width: 100%;
   min-height: 100vh;
   padding: 14px;
   gap: 14px;
@@ -180,6 +183,7 @@ textarea:focus-visible,
 
 .workspace {
   min-width: 0;
+  min-height: calc(100vh - 28px);
   display: grid;
   grid-template-rows: 68px minmax(0, 1fr);
   gap: 14px;
@@ -256,6 +260,11 @@ textarea:focus-visible,
   display: grid;
   grid-template-columns: 280px minmax(460px, 1fr) 340px;
   gap: 14px;
+}
+.scene-panel,
+.expert-panel,
+.result-panel {
+  min-width: 0;
 }
 .glass-panel {
   min-width: 0;
@@ -340,6 +349,9 @@ textarea:focus-visible,
 }
 .sop-brief p {
   margin: 8px 0 12px;
+  max-height: 180px;
+  overflow: auto;
+  overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.7;
@@ -715,7 +727,7 @@ textarea:focus-visible,
   }
   .command-grid {
     grid-template-columns: 230px minmax(0, 1fr);
-    grid-template-rows: minmax(620px, calc(100vh - 110px)) auto;
+    grid-template-rows: minmax(560px, auto) auto;
   }
   .result-panel {
     grid-column: 1 / -1;
@@ -747,12 +759,21 @@ textarea:focus-visible,
   .topbar {
     align-items: flex-start;
     flex-wrap: wrap;
-    min-height: 150px;
+    min-height: 0;
     padding: 16px;
   }
   .project-heading {
-    flex: 1;
-    min-width: 210px;
+    flex: 0 0 100%;
+    min-width: 0;
+  }
+  .preference-controls {
+    order: 3;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .preference-controls select {
+    width: 100%;
   }
   .phase-line {
     order: 3;
@@ -766,6 +787,10 @@ textarea:focus-visible,
   }
   .new-rehearsal {
     min-height: 44px;
+    min-width: 0;
+    flex: 1 1 0;
+    width: calc(50% - 5px);
+    padding-inline: 10px;
   }
   .command-grid {
     display: flex;
@@ -774,8 +799,8 @@ textarea:focus-visible,
   }
   .scene-panel {
     order: 1;
-    min-height: 610px;
-    grid-template-rows: 86px 520px;
+    min-height: 560px;
+    grid-template-rows: 78px minmax(480px, 1fr);
   }
   .expert-panel {
     order: 2;
@@ -864,7 +889,7 @@ textarea:focus-visible,
     overflow: visible;
   }
   .glass-panel {
-    overflow: hidden;
+    overflow: visible;
   }
   .result-scroll button,
   .new-rehearsal,
@@ -896,6 +921,7 @@ textarea:focus-visible,
 }
 .command-room-canvas canvas {
   cursor: grab;
+  touch-action: pan-y;
 }
 .command-room-canvas canvas.is-orbiting {
   cursor: grabbing;
@@ -1492,6 +1518,8 @@ textarea:focus-visible,
   display: grid;
   gap: 14px;
   width: min(430px, 100%);
+  max-width: calc(100vw - 40px);
+  min-width: 0;
   padding: 28px;
   border: 1px solid rgba(96, 233, 255, 0.3);
   border-radius: 20px;
@@ -1520,6 +1548,8 @@ textarea:focus-visible,
   font-size: 11px;
 }
 .identity-card input {
+  width: 100%;
+  min-width: 0;
   min-height: 42px;
   padding: 0 12px;
   border: 1px solid var(--line);
@@ -1580,6 +1610,11 @@ textarea:focus-visible,
 }
 
 @media (max-width: 520px) {
+  .identity-card,
+  .share-card,
+  .team-card {
+    width: calc(100vw - 40px);
+  }
   .product-kpis,
   .evidence-summary,
   .tool-grid,
@@ -1611,6 +1646,8 @@ textarea:focus-visible,
   display: grid;
   gap: 14px;
   width: min(400px, 100%);
+  max-width: calc(100vw - 40px);
+  min-width: 0;
   padding: 24px;
   border: 1px solid rgba(96, 233, 255, 0.3);
   border-radius: 16px;
@@ -1805,6 +1842,8 @@ textarea:focus-visible,
   display: grid;
   gap: 16px;
   width: min(500px, 100%);
+  max-width: calc(100vw - 40px);
+  min-width: 0;
   max-height: 80vh;
   padding: 24px;
   border: 1px solid rgba(96, 233, 255, 0.3);

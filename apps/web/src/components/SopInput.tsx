@@ -64,14 +64,14 @@ export default function SopInput({ onSubmit, locale = 'zh-CN', messages }: SopIn
       <h2 className="text-base font-semibold text-slate-100">{copy.inputHeading}</h2>
 
       <label className="file-import">
-        <span>导入 SOP 文件</span>
+        <span>{copy.importSop}</span>
         <input
           type="file"
           accept=".txt,.md,.json,.csv,.eml,.pdf,.docx,text/plain,text/markdown,message/rfc822,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           onChange={(event) => void importFile(event.target.files?.[0])}
           data-testid="sop-file"
         />
-        <small>TXT / Markdown / JSON / CSV / EML / PDF / DOCX</small>
+        <small>{copy.fileFormats}</small>
       </label>
 
       <label className="block space-y-1">

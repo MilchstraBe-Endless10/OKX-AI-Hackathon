@@ -63,7 +63,7 @@ export default function CouncilResults({
         )}
         {errorDetails?.failedExperts && errorDetails.failedExperts.length > 0 && (
           <p className="mt-1 text-xs text-danger/90" data-testid="failed-experts">
-            失败专家：
+            {copy.failedExperts}:
             {errorDetails.failedExperts.map((item) => item.expert ?? 'unknown').join('、')}
           </p>
         )}
@@ -85,7 +85,12 @@ export default function CouncilResults({
       >
         <h2 className="text-base font-semibold text-slate-100">{copy.loadingTitle}</h2>
         <div className="space-y-2">
-          {['共识', '分歧', '证据缺口', '决策'].map((section) => (
+          {[
+            copy.loadingConsensus,
+            copy.loadingDisagreements,
+            copy.loadingEvidence,
+            copy.loadingDecisions,
+          ].map((section) => (
             <div key={section} className="h-8 bg-navy-800/50 rounded animate-pulse" />
           ))}
         </div>
@@ -112,7 +117,7 @@ export default function CouncilResults({
             onClick={onShare}
             className="px-3 py-1.5 text-xs font-medium rounded-lg border border-border bg-surface text-slate-300 hover:text-slate-100 hover:bg-surface/80 transition-colors"
           >
-            分享报告
+            {copy.shareReport}
           </button>
         )}
       </div>
