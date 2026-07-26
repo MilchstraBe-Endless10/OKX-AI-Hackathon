@@ -18,6 +18,13 @@ export function registerSpaRoutes(app: FastifyInstance): void {
       wildcard: false,
       maxAge: '30d',
       immutable: true,
+      setHeaders: (response, filePath) => {
+        if (filePath.endsWith('/index.html')) {
+          response.setHeader('Cache-Control', 'no-store');
+          response.setHeader('Pragma', 'no-cache');
+          response.setHeader('Expires', '0');
+        }
+      },
     });
     app.setNotFoundHandler(async (request, reply) => {
       if (isApiRoute(request.url)) {
