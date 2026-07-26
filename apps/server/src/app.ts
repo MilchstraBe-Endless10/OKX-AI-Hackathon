@@ -263,7 +263,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       (request.url.startsWith('/a2mcp/') || request.url.startsWith('/mcp')) &&
       request.headers.authorization !== `Bearer ${serviceApiKey}`
     ) {
-      return reply.code(401).send(apiError('UNAUTHORIZED', 'Valid bearer token required'));
+      return reply
+        .code(401)
+        .send(
+          problemDetails('unauthorized', 'Unauthorized', 401, 'Valid bearer token required'),
+        );
     }
     if (
       requireAuth &&
