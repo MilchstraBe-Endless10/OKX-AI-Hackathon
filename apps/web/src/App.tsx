@@ -46,6 +46,15 @@ const EMPTY_SCENE: Scene = {
   paletteToken: 'neutral',
 };
 
+const LOADING_SCENE: Scene = {
+  ...EMPTY_SCENE,
+  agentStates: ['procedure-analyst', 'risk-challenger', 'evidence-auditor'].map((id) => ({
+    id,
+    confidence: 0.35,
+    status: 'running' as const,
+  })),
+};
+
 const DEMO_SOP: SopInputValue = {
   title: '钓鱼邮件处置演示',
   content:
@@ -193,7 +202,7 @@ export default function App() {
     setSceneView('consensus');
     setRehearsalId(null);
     setCouncil(null);
-    setScene(EMPTY_SCENE);
+    setScene(LOADING_SCENE);
     setSubmittedSop(input);
     setPhase('SPECIALISTS_RUNNING');
     try {
@@ -270,7 +279,7 @@ export default function App() {
       }
       setProductRefresh((value) => value + 1);
     } catch {
-      setTrainingResult('训练结果保存失败，请重试最后一个节点。');
+      setTrainingResult(messages.trainingSaveFailed);
     }
   }
 
@@ -415,7 +424,11 @@ export default function App() {
                       </div>
                     </article>
                     {phase !== 'READY' && (
-                      <ProgressPanel phase={phase as GenerationPhase} rehearsalId={rehearsalId} />
+                      <ProgressPanel
+                        phase={phase as GenerationPhase}
+                        rehearsalId={rehearsalId}
+                        messages={messages}
+                      />
                     )}
                     <div className="expert-list">
                       {scene.agentStates.map((agent) => {
@@ -468,7 +481,7 @@ export default function App() {
                       {selectedDecision ? messages.changedTopology : messages.waitingDecision}
                     </span>
                   </div>
-                  <div className="scene-tabs" role="tablist" aria-label="场景视图">
+                  <div className="scene-tabs" role="tablist" aria-label={messages.sceneViewLabel}>
                     {(['consensus', 'risk', 'evidence'] as const).map((view) => (
                       <button
                         key={view}
@@ -595,8 +608,8 @@ export default function App() {
                       className={`decision-coaching risk-${decisionEvaluations.at(-1)?.riskLevel ?? 'medium'}`}
                     >
                       <strong>
-                        训练进度 {decisionEvaluations.length}/{council?.decisionNodes.length ?? 0} ·
-                        当前{' '}
+                        {messages.trainingProgress} {decisionEvaluations.length}/
+                        {council?.decisionNodes.length ?? 0} ·{messages.currentScore}{' '}
                         {Math.max(
                           0,
                           Math.min(

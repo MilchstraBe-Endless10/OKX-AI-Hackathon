@@ -8,7 +8,9 @@ interface DemoGuideProps {
 }
 
 export default function DemoGuide({ locale, onLoadDemo, onClose }: DemoGuideProps) {
-  const english = locale === 'en-US';
+  // Keep non-Chinese locales internally consistent until the full product workspace
+  // dictionary is expanded; do not mix Chinese labels into an otherwise translated view.
+  const english = locale !== 'zh-CN';
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"

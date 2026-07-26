@@ -487,6 +487,25 @@ const EXTRA_KEYS = [
   'riskMedium',
   'riskHigh',
   'byteUnit',
+  'importSop',
+  'fileFormats',
+  'shareReport',
+  'failedExperts',
+  'progressTitle',
+  'expertStatusLabel',
+  'statusWaiting',
+  'statusRunning',
+  'statusComplete',
+  'statusFailed',
+  'statusCancelled',
+  'loadingConsensus',
+  'loadingDisagreements',
+  'loadingEvidence',
+  'loadingDecisions',
+  'trainingProgress',
+  'currentScore',
+  'trainingSaveFailed',
+  'sceneViewLabel',
 ] as const;
 export type ExtraMessageKey = (typeof EXTRA_KEYS)[number];
 export type AppMessages = Messages & Record<ExtraMessageKey, string>;
@@ -518,6 +537,25 @@ const EXTRAS: Record<LocaleCode, Record<ExtraMessageKey, string>> = {
     '中',
     '高',
     '字节',
+    '导入 SOP 文件',
+    'TXT / Markdown / JSON / CSV / EML / PDF / DOCX',
+    '分享报告',
+    '失败专家',
+    '分析进度',
+    '专家分析状态',
+    '等待中',
+    '分析中',
+    '已完成',
+    '失败',
+    '已取消',
+    '共识',
+    '分歧',
+    '证据缺口',
+    '决策节点',
+    '训练进度',
+    '当前评分',
+    '训练结果保存失败，请重试最后一个节点。',
+    '场景视图',
   ]),
   'en-US': extra([
     'Rehearsal history',
@@ -540,6 +578,25 @@ const EXTRAS: Record<LocaleCode, Record<ExtraMessageKey, string>> = {
     'Medium',
     'High',
     'bytes',
+    'Import SOP file',
+    'TXT / Markdown / JSON / CSV / EML / PDF / DOCX',
+    'Share report',
+    'Failed experts',
+    'Analysis progress',
+    'Expert analysis status',
+    'Waiting',
+    'Running',
+    'Complete',
+    'Failed',
+    'Cancelled',
+    'Consensus',
+    'Disagreements',
+    'Evidence gaps',
+    'Decision nodes',
+    'Training progress',
+    'Current score',
+    'Training result could not be saved. Retry the last node.',
+    'Scene view',
   ]),
   'hi-IN': extra([
     'अभ्यास इतिहास',
@@ -720,7 +777,12 @@ const EXTRAS: Record<LocaleCode, Record<ExtraMessageKey, string>> = {
 };
 
 export function getMessages(locale: LocaleCode): AppMessages {
-  return { ...PACKS[locale], ...EXTRAS[locale] };
+  const localized = EXTRAS[locale];
+  const english = EXTRAS['en-US'];
+  const resolvedExtras = Object.fromEntries(
+    EXTRA_KEYS.map((key) => [key, localized[key] || english[key]]),
+  ) as Record<ExtraMessageKey, string>;
+  return { ...PACKS[locale], ...resolvedExtras };
 }
 
 export function resolveTheme(mode: ThemeMode, prefersDark: boolean): ResolvedTheme {
