@@ -16,8 +16,11 @@ export function registerSpaRoutes(app: FastifyInstance): void {
     app.register(fastifyStatic, {
       root: WEB_DIST_PATH,
       wildcard: false,
-      maxAge: '30d',
-      immutable: true,
+      // Keep the HTML shell and assets revalidated on every release. The
+      // bundle is small enough for the competition deployment, and stale
+      // index.html otherwise points browsers at a removed hashed chunk.
+      maxAge: 0,
+      immutable: false,
       setHeaders: (response, filePath) => {
         if (filePath.endsWith('/index.html')) {
           response.setHeader('Cache-Control', 'no-store');
