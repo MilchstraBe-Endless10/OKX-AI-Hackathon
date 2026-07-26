@@ -183,7 +183,7 @@ textarea:focus-visible,
 
 .workspace {
   min-width: 0;
-  min-height: calc(100vh - 28px);
+  min-height: 0;
   display: grid;
   grid-template-rows: 68px minmax(0, 1fr);
   gap: 14px;
@@ -257,6 +257,8 @@ textarea:focus-visible,
 
 .command-grid {
   min-height: 0;
+  min-width: 0;
+  overflow: auto;
   display: grid;
   grid-template-columns: 280px minmax(460px, 1fr) 340px;
   gap: 14px;
@@ -500,6 +502,7 @@ textarea:focus-visible,
   position: relative;
   min-height: 0;
   overflow: hidden;
+  isolation: isolate;
   background: radial-gradient(circle at 50% 56%, rgba(96, 233, 255, 0.08), transparent 29%);
 }
 .scene-stage::after {
@@ -800,6 +803,7 @@ textarea:focus-visible,
     display: flex;
     flex-direction: column;
     margin-top: 12px;
+    overflow: visible;
   }
   .scene-panel {
     order: 1;
@@ -924,6 +928,9 @@ textarea:focus-visible,
   inset: 0;
 }
 .command-room-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
   cursor: grab;
   touch-action: pan-y;
 }
@@ -992,6 +999,31 @@ textarea:focus-visible,
 .preference-controls select:focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
+}
+
+/* Preserve the LTR shell while rendering RTL copy in the controls and panels. */
+.app-shell.locale-rtl {
+  direction: ltr;
+}
+.locale-rtl .topbar,
+.locale-rtl .phase-line,
+.locale-rtl .preference-controls {
+  direction: ltr;
+}
+.locale-rtl .panel-scroll,
+.locale-rtl .result-panel,
+.locale-rtl .product-workspace,
+.locale-rtl .identity-card,
+.locale-rtl .share-card,
+.locale-rtl .team-card {
+  direction: rtl;
+  text-align: right;
+}
+.locale-rtl input,
+.locale-rtl textarea,
+.locale-rtl select {
+  direction: rtl;
+  text-align: right;
 }
 
 :root[data-theme='light'] {

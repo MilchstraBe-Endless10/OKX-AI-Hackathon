@@ -9,6 +9,8 @@ import {
   type TrainingAssignment,
   type Workspace,
 } from '../lib/product-api';
+import { getProductCopy, type ProductCopy } from '../lib/product-copy';
+import type { LocaleCode } from '../lib/preferences';
 
 export type ProductView = 'history' | 'evidence' | 'protocol' | 'security';
 
@@ -16,13 +18,16 @@ interface ProductWorkspaceProps {
   view: ProductView;
   refreshToken: number;
   onOpenTeam?: () => void;
+  locale?: LocaleCode;
 }
 
 export default function ProductWorkspace({
   view,
   refreshToken,
   onOpenTeam,
+  locale = 'zh-CN',
 }: ProductWorkspaceProps) {
+  const copy = getProductCopy(locale);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [sops, setSops] = useState<SopRecord[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -141,17 +146,19 @@ export default function ProductWorkspace({
   }
 
   return (
-    <section className="product-workspace" aria-label="SOP 产品工作台">
+    <section className="product-workspace" aria-label={copy.historyTitle}>
       <header className="product-hero">
         <div>
           <span>OPERATIONAL SOP INTELLIGENCE</span>
-          <h1>{viewTitle(view)}</h1>
-          <p>{workspace?.name ?? 'SOPscape Workspace'} · 可追溯、可训练、可审计</p>
+          <h1>{viewTitle(view, copy)}</h1>
+          <p>
+            {workspace?.name ?? 'SOPscape Workspace'} · {copy.workspaceTagline}
+          </p>
         </div>
         <div className="product-actions">
-          <button onClick={() => window.print()}>导出培训报告</button>
+          <button onClick={() => window.print()}>{copy.exportReport}</button>
           <button onClick={() => void assignTraining()} disabled={!selected}>
-            {trainingAssigned ? '已分配给团队' : '分配演练'}
+            {trainingAssigned ? copy.assignedTraining : copy.assignTraining}
           </button>
         </div>
       </header>
@@ -159,20 +166,20 @@ export default function ProductWorkspace({
       {error && <div className="product-alert">{error}</div>}
 
       <div className="product-kpis">
-        <Metric label="SOP 数量" value={String(sops.length)} />
-        <Metric label="可发布" value={String(stats.ready)} tone="safe" />
-        <Metric label="需复核" value={String(stats.warn)} tone="warn" />
-        <Metric label="已阻断" value={String(stats.blocked)} tone="danger" />
+        <Metric label={copy.sopCount} value={String(sops.length)} />
+        <Metric label={copy.publishable} value={String(stats.ready)} tone="safe" />
+        <Metric label={copy.needsReview} value={String(stats.warn)} tone="warn" />
+        <Metric label={copy.blocked} value={String(stats.blocked)} tone="danger" />
       </div>
 
       <div className="product-grid">
         <aside className="product-card product-list">
           <div className="product-card-head">
-            <strong>SOP 与版本</strong>
+            <strong>{copy.sopVersions}</strong>
             <span>{sops.length} RECORDS</span>
           </div>
           {sops.length === 0 ? (
-            <p className="product-empty">先在指挥室提交一份 SOP，系统会自动建立数字护照。</p>
+            <p className="product-empty">{copy.noSop}</p>
           ) : (
             sops.map((sop) => (
               <button
@@ -193,6 +200,7 @@ export default function ProductWorkspace({
         <main className="product-card product-detail">
           {view === 'history' && (
             <HistoryView
+              copy={copy}
               selected={selected}
               versions={versions}
               draft={draft}
@@ -203,10 +211,16 @@ export default function ProductWorkspace({
             />
           )}
           {view === 'evidence' && (
-            <EvidenceView selected={selected} total={totalEvidence} coverage={coverage} />
+            <EvidenceView
+              copy={copy}
+              selected={selected}
+              total={totalEvidence}
+              coverage={coverage}
+            />
           )}
           {view === 'protocol' && (
             <ProtocolView
+              copy={copy}
               selected={selected}
               versions={versions}
               trainingAssigned={trainingAssigned}
@@ -216,6 +230,7 @@ export default function ProductWorkspace({
           )}
           {view === 'security' && (
             <SecurityView
+              copy={copy}
               workspace={workspace}
               audit={audit}
               selected={selected}
@@ -235,6 +250,7 @@ export default function ProductWorkspace({
 }
 
 function HistoryView({
+  copy,
   selected,
   versions,
   draft,
@@ -243,6 +259,7 @@ function HistoryView({
   onCompare,
   comparison,
 }: {
+  copy: ProductCopy;
   selected: SopRecord | null;
   versions: SopVersion[];
   draft: string;
@@ -251,10 +268,10 @@ function HistoryView({
   onCompare: () => void;
   comparison: VersionComparison | null;
 }) {
-  if (!selected) return <p className="product-empty">暂无 SOP 历史。</p>;
+  if (!selected) return <p className="product-empty">{copy.noHistory}</p>;
   return (
     <>
-      <SectionTitle title="团队 SOP 工作台" subtitle="历史、版本、分享与协作" />
+      <SectionTitle title={copy.historyTitle} subtitle={copy.historySubtitle} />
       <div className="passport-banner">
         <span className={`verdict verdict-${selected.status.toLowerCase()}`}>
           {selected.status}
@@ -262,21 +279,23 @@ function HistoryView({
         <div>
           <strong>{selected.title}</strong>
           <p>
-            数字护照 {selected.passport.id.slice(0, 8)} · 当前 v{selected.latestVersion}
+            {copy.sopVersions} · {selected.passport.id.slice(0, 8)} · v{selected.latestVersion}
           </p>
         </div>
         <b>{selected.passport.score}</b>
       </div>
       <label className="version-editor">
-        <span>创建新版本</span>
+        <span>{copy.createVersion}</span>
         <textarea value={draft} onChange={(event) => onDraft(event.target.value)} rows={7} />
       </label>
       <div className="inline-actions">
-        <button onClick={onCreate}>保存并重新审查</button>
+        <button onClick={onCreate}>{copy.saveReview}</button>
         <button onClick={onCompare} disabled={versions.length < 2}>
-          比较最近两个版本
+          {copy.compareVersions}
         </button>
-        <button onClick={() => navigator.clipboard?.writeText(location.href)}>复制分享链接</button>
+        <button onClick={() => navigator.clipboard?.writeText(location.href)}>
+          {copy.copyShare}
+        </button>
       </div>
       {comparison && (
         <div className={`comparison ${comparison.regressed ? 'is-regressed' : ''}`}>
@@ -298,43 +317,63 @@ function HistoryView({
 }
 
 function EvidenceView({
+  copy,
   selected,
   total,
   coverage,
 }: {
+  copy: ProductCopy;
   selected: SopRecord | null;
   total: number;
   coverage: number;
 }) {
-  if (!selected) return <p className="product-empty">暂无证据档案。</p>;
+  if (!selected) return <p className="product-empty">{copy.noItems}</p>;
   return (
     <>
-      <SectionTitle title="证据链与就绪门禁" subtitle="每项判断都能回到证据引用" />
+      <SectionTitle title={copy.evidenceTitle} subtitle={copy.evidenceSubtitle} />
       <div className="readiness-gauge">
         <b>{selected.passport.score}</b>
         <span>READINESS · {selected.passport.verdict}</span>
         <i style={{ width: `${selected.passport.score}%` }} />
       </div>
       <div className="evidence-summary">
-        <Metric label="证据覆盖" value={`${coverage}%`} />
-        <Metric label="证据引用" value={String(total)} />
-        <Metric label="阻断项" value={String(selected.passport.blockers.length)} tone="danger" />
-        <Metric label="警告项" value={String(selected.passport.warnings.length)} tone="warn" />
+        <Metric label={copy.evidenceSubtitleShort} value={`${coverage}%`} />
+        <Metric label={copy.evidenceTitle} value={String(total)} />
+        <Metric
+          label={copy.blocked}
+          value={String(selected.passport.blockers.length)}
+          tone="danger"
+        />
+        <Metric
+          label={copy.needsReview}
+          value={String(selected.passport.warnings.length)}
+          tone="warn"
+        />
       </div>
-      <EvidenceList title="证据引用" items={selected.passport.evidenceRefs} />
-      <EvidenceList title="发布阻断" items={selected.passport.blockers} />
-      <EvidenceList title="复核警告" items={selected.passport.warnings} />
+      <EvidenceList
+        title={copy.evidenceTitle}
+        items={selected.passport.evidenceRefs}
+        empty={copy.noItems}
+      />
+      <EvidenceList title={copy.blocked} items={selected.passport.blockers} empty={copy.noItems} />
+      <EvidenceList
+        title={copy.needsReview}
+        items={selected.passport.warnings}
+        empty={copy.noItems}
+      />
     </>
   );
 }
 
 function ProtocolView({
+  copy,
   selected,
   versions,
   trainingAssigned,
   metrics,
   training,
 }: {
+  copy: ProductCopy;
   selected: SopRecord | null;
   versions: SopVersion[];
   trainingAssigned: boolean;
@@ -344,17 +383,14 @@ function ProtocolView({
   const council = versions[0]?.council;
   return (
     <>
-      <SectionTitle
-        title="演练协议与场景模板"
-        subtitle="评审、生成、决策、版本比较四个 A2MCP 工具"
-      />
+      <SectionTitle title={copy.protocolTitle} subtitle={copy.protocolSubtitle} />
       <div className="tool-grid">
         {['review_sop', 'generate_rehearsal', 'evaluate_decision', 'compare_sop_versions'].map(
           (tool) => (
             <article key={tool}>
               <span>FREE · A2MCP</span>
               <strong>{tool}</strong>
-              <p>鉴权、限流、Schema 校验与审计日志已启用。</p>
+              <p>{copy.protocolToolStatus}</p>
             </article>
           ),
         )}
@@ -367,7 +403,7 @@ function ProtocolView({
       </div>
       <div className="scenario-card">
         <span>PHISHING EMAIL · BRANCHING TEMPLATE</span>
-        <h2>{selected?.title ?? '钓鱼邮件响应演练'}</h2>
+        <h2>{selected?.title ?? copy.phishingScenario}</h2>
         <p>
           {council?.decisionNodes[0]?.prompt ??
             '收到一封要求紧急重置密码的邮件，你会点击链接，还是独立核验并上报？'}
@@ -379,9 +415,7 @@ function ProtocolView({
             </li>
           ))}
         </ul>
-        <small>
-          {trainingAssigned ? '团队训练已分配，结果将进入审计记录。' : '等待分配团队训练。'}
-        </small>
+        <small>{trainingAssigned ? copy.trainingAssigned : copy.trainingWaiting}</small>
       </div>
       <div className="timeline">
         {training.slice(0, 6).map((assignment) => (
@@ -399,6 +433,7 @@ function ProtocolView({
 }
 
 function SecurityView({
+  copy,
   workspace,
   audit,
   selected,
@@ -410,6 +445,7 @@ function SecurityView({
   onInvite,
   onOpenTeam,
 }: {
+  copy: ProductCopy;
   workspace: Workspace | null;
   audit: AuditEvent[];
   selected: SopRecord | null;
@@ -426,7 +462,7 @@ function SecurityView({
     : null;
   return (
     <>
-      <SectionTitle title="安全 A2MCP 服务" subtitle="鉴权、限流、审计、滥用防护和稳定 API" />
+      <SectionTitle title={copy.securityTitle} subtitle={copy.securitySubtitle} />
       <div className="security-checks">
         {[
           ['Bearer 鉴权', 'SOPSCAPE_API_KEY 可配置'],
@@ -455,12 +491,12 @@ function SecurityView({
       </div>
       {onOpenTeam && (
         <button className="team-manage-btn" onClick={onOpenTeam}>
-          团队管理
+          {copy.teamManagement}
         </button>
       )}
       <section className="invite-console">
         <div>
-          <strong>邀请协作者</strong>
+          <strong>{copy.inviteCollaborator}</strong>
           <p>所有者可签发 48 小时有效的一次性邀请；服务端只保存令牌摘要。</p>
         </div>
         <input
@@ -478,12 +514,12 @@ function SecurityView({
           <option value="editor">Editor · 可编辑与训练</option>
           <option value="viewer">Viewer · 只读查看</option>
         </select>
-        <button onClick={() => void onInvite()}>生成一次性邀请</button>
+        <button onClick={() => void onInvite()}>{copy.generateInvite}</button>
         {invitationUrl && (
           <div className="invitation-result">
             <code>{invitationUrl}</code>
             <button onClick={() => navigator.clipboard?.writeText(invitationUrl)}>
-              复制邀请链接
+              {copy.copyInvite}
             </button>
           </div>
         )}
@@ -530,7 +566,7 @@ function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) 
   );
 }
 
-function EvidenceList({ title, items }: { title: string; items: string[] }) {
+function EvidenceList({ title, items, empty }: { title: string; items: string[]; empty: string }) {
   return (
     <section className="evidence-list">
       <h3>{title}</h3>
@@ -541,17 +577,17 @@ function EvidenceList({ title, items }: { title: string; items: string[] }) {
           ))}
         </ul>
       ) : (
-        <p>无</p>
+        <p>{empty}</p>
       )}
     </section>
   );
 }
 
-function viewTitle(view: ProductView): string {
+function viewTitle(view: ProductView, copy: ProductCopy): string {
   return {
-    history: 'SOP 数字护照与版本中心',
-    evidence: '证据档案与发布门禁',
-    protocol: '钓鱼演练与 A2MCP 协议',
-    security: '安全、团队与审计控制台',
+    history: copy.historyTitle,
+    evidence: copy.evidenceTitle,
+    protocol: copy.protocolTitle,
+    security: copy.securityTitle,
   }[view];
 }
