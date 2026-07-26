@@ -276,13 +276,49 @@ export class LLMProvider {
     role: Role,
     input: { title: string; content: string; locale?: string },
   ): string {
-    return `${ROLE_PROMPTS[role]}\n\nSOP Title: ${input.title}\nSOP Content: ${input.content}${input.locale ? `\nLocale: ${input.locale}` : ''}\n\nRespond with valid JSON matching the Finding schema.`;
+    return `${ROLE_PROMPTS[role]}
+
+SOP Title: ${input.title}
+SOP Content: ${input.content}${input.locale ? `\nLocale: ${input.locale}` : ''}
+
+Return exactly one JSON object and no markdown. The object must contain every field below:
+{
+  "role": "${role}",
+  "claim": "a specific claim grounded in this SOP",
+  "evidenceRefs": ["quoted step or evidence reference"],
+  "confidence": 0.8,
+  "severity": "low",
+  "affectedStepIds": ["step-1"],
+  "unsupported": false
+}
+Use only these severity values: low, medium, high, critical. Keep arrays valid even when evidence is missing; use [] and set unsupported to true. Do not add fields.`;
   }
 
   private buildModeratorPrompt(findings: Record<Role, Finding>): string {
     const findingsText = Object.values(findings)
       .map((f) => `- ${f.role}: ${f.claim} (confidence: ${f.confidence}, severity: ${f.severity})`)
       .join('\n');
-    return `You are a moderator synthesizing expert findings.\n\nFindings:\n${findingsText}\n\nRespond with valid JSON matching the CouncilResult schema.`;
+    return `You are a moderator synthesizing expert findings.
+
+Findings:
+${findingsText}
+
+Return exactly one JSON object and no markdown with this shape:
+{
+  "consensus": [{
+    "role": "procedure-analyst",
+    "claim": "specific consensus claim",
+    "evidenceRefs": ["finding evidence"],
+    "confidence": 0.8,
+    "severity": "medium",
+    "affectedStepIds": ["step-1"],
+    "unsupported": false
+  }],
+  "disagreements": [{"topic": "topic", "positions": [{"role": "procedure-analyst", "stance": "position"}, {"role": "risk-challenger", "stance": "position"}]}],
+  "evidenceGaps": [{"description": "missing evidence", "refs": ["step-1"]}],
+  "recommendedPath": ["step-1"],
+  "decisionNodes": [{"id": "decision-1", "prompt": "What should happen next?", "options": [{"id": "option-1", "label": "Verify", "consequence": "Evidence is preserved"}]}]
+}
+Use only valid roles and severity values. Arrays may be empty except consensus, which must contain at least one finding. Do not add fields.`;
   }
 }
