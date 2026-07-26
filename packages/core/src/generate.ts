@@ -1,6 +1,6 @@
 // @sopscape/core — orchestration: real LLM provider with partial failure handling
 // ponytail: minimal orchestration — LLMProvider with retry/fallback, FakeProvider for tests.
-// Fixed order: 3 specialists parallel → moderator → persist.
+// Sequential: specialists run one-by-one to avoid burst QPS → rate limits.
 // Partial failure: < 3 specialists → PARTIAL_FAILED, no moderator, no decision nodes.
 
 import {

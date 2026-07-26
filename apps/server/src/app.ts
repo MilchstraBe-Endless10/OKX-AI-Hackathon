@@ -75,13 +75,15 @@ function getLLMConfig(): {
   baseUrl: string;
   model: string;
   fallbackModel?: string;
+  fallbackBaseUrl?: string;
 } | null {
   const apiKey = process.env.MODEL_API_KEY;
   const baseUrl = process.env.MODEL_BASE_URL;
   const model = process.env.MODEL_NAME;
   const fallbackModel = process.env.MODEL_FALLBACK_NAME;
+  const fallbackBaseUrl = process.env.MODEL_FALLBACK_BASE_URL;
   return apiKey && baseUrl && model
-    ? { apiKey, baseUrl, model, fallbackModel: fallbackModel || undefined }
+    ? { apiKey, baseUrl, model, fallbackModel: fallbackModel || undefined, fallbackBaseUrl: fallbackBaseUrl || undefined }
     : null;
 }
 

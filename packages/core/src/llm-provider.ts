@@ -1,6 +1,7 @@
 // @sopscape/core — LLM provider with retry chain, fallback, and Zod validation
-// ponytail: primary model → same-model retry → glm-4.6 fallback.
+// ponytail: primary model → same-model retry → fallback model (separate baseUrl to avoid shared rate limit).
 // 30s timeout per call, 1 retry, Zod schema validation at every step.
+// Sequential specialists: avoids burst QPS triggering rate limits.
 
 import {
   FindingSchema,
@@ -28,6 +29,7 @@ export interface LLMConfig {
   baseUrl: string;
   model: string;
   fallbackModel?: string; // e.g. 'glm-4.6' — used on primary failure
+  fallbackBaseUrl?: string; // separate provider URL for fallback (avoids shared rate limit)
   timeoutMs?: number;
 }
 
@@ -86,17 +88,20 @@ export class LLMProvider {
     successes: { role: Role; finding: Finding }[];
     failures: { role: Role; error: string }[];
   }> {
-    const results = await Promise.all(
-      roles.map(async (role) => {
-        if (signal?.aborted) return { role, error: 'ABORTED' } as const;
-        const finding = await this.callWithRoleValidation(
-          this.buildSpecialistPrompt(role, input),
-          signal,
-        );
-        if (finding) return { role, finding };
-        return { role, error: 'SCHEMA_OR_CALL_FAILED' } as const;
-      }),
-    );
+    // Sequential: avoids burst QPS triggering rate limits
+    const results: Array<{ role: Role; finding?: Finding; error?: string }> = [];
+    for (const role of roles) {
+      if (signal?.aborted) break;
+      const finding = await this.callWithRoleValidation(
+        this.buildSpecialistPrompt(role, input),
+        signal,
+      );
+      if (finding) {
+        results.push({ role, finding });
+      } else {
+        results.push({ role, error: 'SCHEMA_OR_CALL_FAILED' });
+      }
+    }
 
     const successes: { role: Role; finding: Finding }[] = [];
     const failures: { role: Role; error: string }[] = [];
@@ -104,7 +109,7 @@ export class LLMProvider {
       if ('finding' in r && r.finding) {
         successes.push({ role: r.role, finding: r.finding });
       } else {
-        failures.push({ role: r.role, error: r.error });
+        failures.push({ role: r.role, error: r.error ?? 'UNKNOWN' });
       }
     }
     return { successes, failures };
@@ -145,6 +150,7 @@ export class LLMProvider {
           prompt,
           this.config.fallbackModel,
           signal,
+          true,
         );
         const fallbackFinding = parseFinding(fallbackRaw);
         if (fallbackFinding) return fallbackFinding;
@@ -174,6 +180,7 @@ export class LLMProvider {
           prompt,
           this.config.fallbackModel,
           signal,
+          true,
         );
         const fallbackValidated = parseCouncil(fallbackRaw);
         if (fallbackValidated) return fallbackValidated;
@@ -186,16 +193,20 @@ export class LLMProvider {
     prompt: string,
     modelName: string,
     signal?: AbortSignal,
+    useFallback?: boolean,
   ): Promise<unknown> {
     const timeoutMs = this.config.timeoutMs ?? CALL_TIMEOUT_MS;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     signal?.addEventListener('abort', () => controller.abort(), { once: true });
 
-    const isAnthropic = this.config.baseUrl.includes('anthropic');
-    const url = isAnthropic
-      ? `${this.config.baseUrl}/v1/messages`
-      : `${this.config.baseUrl}/chat/completions`;
+    const url = useFallback && this.config.fallbackBaseUrl
+      ? this.config.fallbackBaseUrl
+      : this.config.baseUrl;
+    const isAnthropic = url.includes('anthropic');
+    const endpoint = isAnthropic
+      ? `${url}/v1/messages`
+      : `${url}/chat/completions`;
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     const body: Record<string, unknown> = isAnthropic
@@ -222,7 +233,7 @@ export class LLMProvider {
     }
 
     try {
-      const response = await fetch(url, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -264,9 +275,10 @@ export class LLMProvider {
     prompt: string,
     modelName: string,
     signal?: AbortSignal,
+    useFallback?: boolean,
   ): Promise<unknown> {
     try {
-      return await this.callOneAttempt(prompt, modelName, signal);
+      return await this.callOneAttempt(prompt, modelName, signal, useFallback);
     } catch {
       return null;
     }
