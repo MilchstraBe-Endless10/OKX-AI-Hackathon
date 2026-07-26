@@ -9,6 +9,8 @@ describe('locale catalogue', () => {
       const messages = getMessages(locale.code);
       expect(Object.keys(messages).sort()).toEqual(baseline);
       expect(Object.values(messages).every(Boolean)).toBe(true);
+      expect(messages.importSop).toBeTruthy();
+      expect(messages.sceneViewLabel).toBeTruthy();
     }
   });
 });
