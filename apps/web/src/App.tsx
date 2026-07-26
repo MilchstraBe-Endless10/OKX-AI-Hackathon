@@ -9,6 +9,7 @@ import IdentityPanel from './components/IdentityPanel';
 import ShareReport from './components/ShareReport';
 import ShareDialog from './components/ShareDialog';
 import TeamManagement from './components/TeamManagement';
+import DemoGuide from './components/DemoGuide';
 import {
   A2mcpError,
   councilToScene,
@@ -33,6 +34,7 @@ import {
   type LocaleCode,
   type ThemeMode,
 } from './lib/preferences';
+import { COUNCIL_FIXTURE, SCENE_FIXTURE } from './lib/fixtures';
 
 const EMPTY_SCENE: Scene = {
   schemaVersion: '1.0.0',
@@ -42,6 +44,13 @@ const EMPTY_SCENE: Scene = {
   decisionNodes: [],
   cameraCues: ['idle'],
   paletteToken: 'neutral',
+};
+
+const DEMO_SOP: SopInputValue = {
+  title: '钓鱼邮件处置演示',
+  content:
+    '收到要求紧急付款或登录的邮件时，不要点击链接。通过独立渠道核验发件人，保留原始邮件证据，并向安全团队上报。',
+  locale: 'zh-CN',
 };
 
 const EXPERT_COPY = {
@@ -104,6 +113,7 @@ export default function App() {
   const [trainingResult, setTrainingResult] = useState<string | null>(null);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [teamDialogOpen, setTeamDialogOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [currentMember, setCurrentMember] = useState<ApiMember | null>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const refreshAfterIdentityChange = useCallback(() => {
@@ -221,6 +231,21 @@ export default function App() {
     setTrainingResult(null);
   }
 
+  function loadDemo() {
+    setGuideOpen(false);
+    setSelectedDecision(null);
+    setDecisionEvaluations([]);
+    setErrorMessage(null);
+    setErrorDetails(null);
+    setSubmittedSop(DEMO_SOP);
+    setRehearsalId('demo-fixture-phishing');
+    setCouncil(COUNCIL_FIXTURE);
+    setScene(SCENE_FIXTURE);
+    setCurrentSop(null);
+    setTrainingResult(null);
+    setPhase('READY');
+  }
+
   async function chooseDecision(choiceId: string) {
     setSelectedDecision(choiceId);
     const node = council?.decisionNodes.find((candidate) =>
@@ -252,6 +277,9 @@ export default function App() {
   return (
     <>
       <IdentityPanel onMember={refreshAfterIdentityChange} />
+      {guideOpen && (
+        <DemoGuide locale={locale} onLoadDemo={loadDemo} onClose={() => setGuideOpen(false)} />
+      )}
       {shareDialogOpen && rehearsalId && (
         <ShareDialog rehearsalId={rehearsalId} onClose={() => setShareDialogOpen(false)} />
       )}
@@ -347,6 +375,14 @@ export default function App() {
               onClick={phase === 'idle' ? undefined : resetRehearsal}
             >
               {phase === 'idle' ? messages.online : `＋ ${messages.newRehearsal}`}
+            </button>
+            <button
+              type="button"
+              className="new-rehearsal"
+              onClick={() => setGuideOpen(true)}
+              data-testid="guide-trigger"
+            >
+              {locale === 'en-US' ? 'Guide & demo' : '演示 / 指南'}
             </button>
           </header>
 
