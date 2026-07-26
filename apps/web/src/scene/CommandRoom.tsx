@@ -84,7 +84,9 @@ export default function CommandRoom({
     const cameraTarget = new THREE.Vector3(0, 1.1, 0);
     const initialOrbit = { yaw: 0, pitch: 0.14 };
     const orbit = { ...initialOrbit };
-    const cameraRadius = 7.1;
+    // Keep every expert and evidence node inside the frustum on portrait and
+    // zoomed-in viewports instead of letting the central scene appear clipped.
+    const cameraRadius = Math.max(7.1, 7.1 / Math.min(initialWidth / initialHeight, 1));
     const updateCamera = () => {
       const horizontalRadius = cameraRadius * Math.cos(orbit.pitch);
       camera.position.set(

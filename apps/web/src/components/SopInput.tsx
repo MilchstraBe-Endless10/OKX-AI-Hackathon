@@ -23,7 +23,7 @@ export default function SopInput({ onSubmit, locale = 'zh-CN', messages }: SopIn
     const binary = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.docx');
     if (file.size > (binary ? 5 * 1024 * 1024 : MAX_CONTENT_BYTES)) {
       setValidationError(
-        `文件超过 ${binary ? '5 MiB' : `${MAX_CONTENT_BYTES.toLocaleString()} 字节`}限制`,
+        `${binary ? '5 MiB' : `${MAX_CONTENT_BYTES.toLocaleString()} ${copy.byteUnit}`} limit exceeded`,
       );
       return;
     }
@@ -32,7 +32,7 @@ export default function SopInput({ onSubmit, locale = 'zh-CN', messages }: SopIn
       setTitle((current) => current || file.name.replace(/\.[^.]+$/, ''));
       setContent(imported);
     } catch (reason) {
-      setValidationError(reason instanceof Error ? reason.message : '文档解析失败');
+      setValidationError(reason instanceof Error ? reason.message : `${copy.importSop} failed`);
     }
   }
 

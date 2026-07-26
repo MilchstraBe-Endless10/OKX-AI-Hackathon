@@ -91,7 +91,13 @@ export default function CouncilResults({
             copy.loadingEvidence,
             copy.loadingDecisions,
           ].map((section) => (
-            <div key={section} className="h-8 bg-navy-800/50 rounded animate-pulse" />
+            <div
+              key={section}
+              className="flex items-center gap-2 rounded border border-border bg-navy-800/50 px-3 py-2 text-xs text-slate-300"
+            >
+              <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-teal-400" />
+              <span>{section}</span>
+            </div>
           ))}
         </div>
         <p className="text-xs text-slate-500" aria-live="polite">

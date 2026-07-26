@@ -152,7 +152,10 @@ export default function App() {
   useEffect(() => {
     const config = LOCALES.find(({ code }) => code === locale) ?? LOCALES[0];
     document.documentElement.lang = locale;
-    document.documentElement.dir = config.dir;
+    // Keep the application shell LTR so RTL scripts do not reverse the rail,
+    // panel order, or 3D scene. Text controls receive RTL direction locally.
+    document.documentElement.dir = 'ltr';
+    document.documentElement.dataset.localeDirection = config.dir;
     localStorage.setItem('sopscape-locale', locale);
   }, [locale]);
 
@@ -302,7 +305,10 @@ export default function App() {
           }}
         />
       )}
-      <div ref={shellRef} className="app-shell">
+      <div
+        ref={shellRef}
+        className={`app-shell ${LOCALES.find(({ code }) => code === locale)?.dir === 'rtl' ? 'locale-rtl' : ''}`}
+      >
         <div className="app-rail" role="navigation" aria-label={messages.commandRoom}>
           <div className="brand-mark" role="img" aria-label="SOPscape Council" />
           <nav className="rail-nav">
@@ -618,7 +624,6 @@ export default function App() {
                               decisionEvaluations.reduce((sum, item) => sum + item.scoreDelta, 0),
                           ),
                         )}
-                        分
                       </strong>
                       <p>{decisionEvaluations.at(-1)?.consequence}</p>
                       <small>{trainingResult ?? decisionEvaluations.at(-1)?.coaching}</small>
@@ -631,6 +636,7 @@ export default function App() {
             <ProductWorkspace
               view={activeView}
               refreshToken={productRefresh}
+              locale={locale}
               onOpenTeam={() => setTeamDialogOpen(true)}
             />
           )}
