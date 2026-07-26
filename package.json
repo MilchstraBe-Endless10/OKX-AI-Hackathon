@@ -15,7 +15,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml}\"",
     "typecheck": "pnpm -r --filter './packages/**' run build && pnpm -r --parallel run typecheck",
     "lint": "eslint . --ext .ts,.tsx",
-    "test:unit": "vitest run tests/unit",
+    "test:unit": "vitest run tests/unit --maxWorkers=1 --fileParallelism=false",
     "test:fixtures": "vitest run tests/unit/fixtures.test.ts",
     "test": "pnpm test:unit && pnpm test:fixtures",
     "verify:listing": "node scripts/verify-okx-listing.mjs",

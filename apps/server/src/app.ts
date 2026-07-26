@@ -265,9 +265,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     ) {
       return reply
         .code(401)
-        .send(
-          problemDetails('unauthorized', 'Unauthorized', 401, 'Valid bearer token required'),
-        );
+        .send(problemDetails('unauthorized', 'Unauthorized', 401, 'Valid bearer token required'));
     }
     if (
       requireAuth &&
