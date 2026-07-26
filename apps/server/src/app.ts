@@ -83,7 +83,13 @@ function getLLMConfig(): {
   const fallbackModel = process.env.MODEL_FALLBACK_NAME;
   const fallbackBaseUrl = process.env.MODEL_FALLBACK_BASE_URL;
   return apiKey && baseUrl && model
-    ? { apiKey, baseUrl, model, fallbackModel: fallbackModel || undefined, fallbackBaseUrl: fallbackBaseUrl || undefined }
+    ? {
+        apiKey,
+        baseUrl,
+        model,
+        fallbackModel: fallbackModel || undefined,
+        fallbackBaseUrl: fallbackBaseUrl || undefined,
+      }
     : null;
 }
 

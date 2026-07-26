@@ -200,13 +200,12 @@ export class LLMProvider {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     signal?.addEventListener('abort', () => controller.abort(), { once: true });
 
-    const url = useFallback && this.config.fallbackBaseUrl
-      ? this.config.fallbackBaseUrl
-      : this.config.baseUrl;
+    const url =
+      useFallback && this.config.fallbackBaseUrl
+        ? this.config.fallbackBaseUrl
+        : this.config.baseUrl;
     const isAnthropic = url.includes('anthropic');
-    const endpoint = isAnthropic
-      ? `${url}/v1/messages`
-      : `${url}/chat/completions`;
+    const endpoint = isAnthropic ? `${url}/v1/messages` : `${url}/chat/completions`;
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     const body: Record<string, unknown> = isAnthropic
